@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using Ghostwriter.Core.Diagnostics;
 using static Ghostwriter.Platform.Native.NativeMethods;
 
 namespace Ghostwriter.Platform.Native;
@@ -49,11 +50,33 @@ public sealed class MessageWindow : IDisposable
 
     public void AddHandler(MessageHandler handler) => _handlers.Add(handler);
 
+    /// <summary>Called (after logging) when a handler threw, so the app can tell the user. Must not throw itself.</summary>
+    public Action<Exception>? HandlerFailed { get; set; }
+
     private nint Proc(nint hwnd, uint msg, nint wParam, nint lParam)
     {
         foreach (var handler in _handlers)
         {
-            if (handler(msg, wParam, lParam, out var result)) return result;
+            try
+            {
+                if (handler(msg, wParam, lParam, out var result)) return result;
+            }
+            catch (Exception ex)
+            {
+                // An exception must never leave a native window procedure: nothing above it catches it and the
+                // process would end. Hotkey callbacks and tray menu actions run in here.
+                AppLog.Error($"Message 0x{msg:X4} failed.", ex);
+                try
+                {
+                    HandlerFailed?.Invoke(ex);
+                }
+                catch (Exception notifyError)
+                {
+                    AppLog.Error("Reporting the failure failed as well.", notifyError);
+                }
+
+                return 0;
+            }
         }
 
         return DefWindowProc(hwnd, msg, wParam, lParam);

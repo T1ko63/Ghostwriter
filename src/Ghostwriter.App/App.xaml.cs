@@ -106,7 +106,10 @@ public partial class App : Application
         Lap("config");
 
         _theme = new ThemeService(this);
-        _window = new MessageWindow();
+        _window = new MessageWindow
+        {
+            HandlerFailed = ex => _controller?.ShowNotice(Loc.Get("err_unexpected", ex.GetType().Name)),
+        };
         _clipboard = new ClipboardService(_window);
         _hotkeys = new HotkeyManager(_window);
         _tray = new TrayIcon(_window, "Ghostwriter") { MenuProvider = BuildMenu };
