@@ -128,7 +128,6 @@ public partial class App : Application
         _theme.Changed += () => ApplyLook(overlay, status);
         ApplyLook(overlay, status);
 
-        _providers = new ProviderRegistry(_config.Current.Settings.Providers, _config.Current.Settings.DefaultProvider, _http);
         // Marker characters are read per run, so changing them in settings.toml takes effect without a restart.
         var runner = new ProviderPromptRunner(
             () => _providers!,
@@ -155,32 +154,57 @@ public partial class App : Application
 
     // ---- idle memory trimming ----
 
+    private static readonly TimeSpan TrimRetryWhileBusy = TimeSpan.FromSeconds(2);
     private System.Windows.Threading.DispatcherTimer? _trimTimer;
-    private long _trimmedAtActivity = -1;
 
     /// <summary>
     /// After a quiet period (idle_trim_seconds in settings.toml) the working set is trimmed once. Only done while
     /// nothing is going on, and only once per quiet period. GHOSTWRITER_TRIM_SECONDS overrides the setting (tests).
+    /// The timer is one-shot and re-armed by every hotkey, so the app does not wake up while it idles.
     /// </summary>
     private void StartIdleTrimming()
     {
-        _trimTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-        _trimTimer.Tick += (_, _) =>
-        {
-            var seconds = int.TryParse(Environment.GetEnvironmentVariable("GHOSTWRITER_TRIM_SECONDS"), out var forced)
-                ? forced
-                : _config!.Current.Settings.IdleTrimSeconds;
-            if (seconds <= 0) return; // read on every tick, so a reloaded setting takes effect
+        _trimTimer = new System.Windows.Threading.DispatcherTimer();
+        _trimTimer.Tick += (_, _) => TrimIfIdle();
+        _controller!.Activity += ScheduleIdleTrim;
+        ScheduleIdleTrim();
+    }
 
-            var controller = _controller!;
-            var idle = Environment.TickCount64 - controller.LastActivityTick;
-            if (controller.IsBusy || idle < seconds * 1000L || _trimmedAtActivity == controller.LastActivityTick) return;
+    private int IdleTrimSeconds => int.TryParse(Environment.GetEnvironmentVariable("GHOSTWRITER_TRIM_SECONDS"), out var forced)
+        ? forced
+        : _config!.Current.Settings.IdleTrimSeconds;
 
-            _trimmedAtActivity = controller.LastActivityTick;
-            var (before, after) = Ghostwriter.Platform.Native.WorkingSetTrimmer.Trim();
-            AppLog.Info($"Idle for {idle / 1000} s: working set trimmed {before:F0} MB -> {after:F0} MB");
-        };
+    /// <summary>Arms the trim for idle_trim_seconds from now (also after a reload, so a changed setting takes effect).</summary>
+    private void ScheduleIdleTrim()
+    {
+        if (_trimTimer is null) return;
+        _trimTimer.Stop();
+        var seconds = IdleTrimSeconds;
+        if (seconds <= 0) return;
+
+        var idle = Environment.TickCount64 - _controller!.LastActivityTick;
+        _trimTimer.Interval = TimeSpan.FromMilliseconds(Math.Max(0, seconds * 1000L - idle));
         _trimTimer.Start();
+    }
+
+    private void TrimIfIdle()
+    {
+        _trimTimer!.Stop();
+        var seconds = IdleTrimSeconds;
+        if (seconds <= 0) return;
+
+        var controller = _controller!;
+        var idle = Environment.TickCount64 - controller.LastActivityTick;
+        if (controller.IsBusy || idle < seconds * 1000L)
+        {
+            // Still working (overlay open, run active) or a hotkey came in just now: look again shortly.
+            _trimTimer.Interval = controller.IsBusy ? TrimRetryWhileBusy : TimeSpan.FromMilliseconds(seconds * 1000L - idle);
+            _trimTimer.Start();
+            return;
+        }
+
+        var (before, after) = Ghostwriter.Platform.Native.WorkingSetTrimmer.Trim();
+        AppLog.Info($"Idle for {idle / 1000} s: working set trimmed {before:F0} MB -> {after:F0} MB");
     }
 
     // ---- configuration ----
@@ -205,6 +229,7 @@ public partial class App : Application
             Loc.Language = settings.Language.Equals("auto", StringComparison.OrdinalIgnoreCase) ? _systemLanguage : settings.Language;
             ApplyTheme(settings);
             _controller!.History.Capacity = settings.UndoHistory;
+            ScheduleIdleTrim(); // idle_trim_seconds may have changed
             _controller.Position = Enum.TryParse<OverlayPosition>(settings.OverlayPosition, ignoreCase: true, out var position)
                 ? position
                 : OverlayPosition.Caret;

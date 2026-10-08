@@ -67,7 +67,14 @@ public sealed class AppController
 
     public bool IsBusy => _busy || _overlay.IsShown;
 
-    private void MarkActivity() => LastActivityTick = Environment.TickCount64;
+    /// <summary>Raised on every hotkey, after <see cref="LastActivityTick"/> was updated.</summary>
+    public event Action? Activity;
+
+    private void MarkActivity()
+    {
+        LastActivityTick = Environment.TickCount64;
+        Activity?.Invoke();
+    }
 
     // ---- entry points ----
 
