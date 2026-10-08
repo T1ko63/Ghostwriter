@@ -128,7 +128,7 @@ public sealed class TextAccessService : ITextAccess
             }
 
             var outcome = await CopyOnceAsync(ct);
-            if (outcome.InputFailed) return CaptureResult.Fail(CaptureFailure.InputBlocked);
+            if (outcome.Failure is { } failed) return CaptureResult.Fail(failed);
 
             var text = outcome.Text;
             if (text is null && !selectAllFirst)
@@ -137,7 +137,7 @@ public sealed class TextAccessService : ITextAccess
 
                 if (!InputSimulator.CtrlChord(InputSimulator.VK_A)) return CaptureResult.Fail(CaptureFailure.InputBlocked);
                 outcome = await CopyOnceAsync(ct);
-                if (outcome.InputFailed) return CaptureResult.Fail(CaptureFailure.InputBlocked);
+                if (outcome.Failure is { } failedAgain) return CaptureResult.Fail(failedAgain);
                 text = outcome.Text;
                 origin = TextOrigin.WholeField;
             }
@@ -161,7 +161,8 @@ public sealed class TextAccessService : ITextAccess
         }
     }
 
-    private readonly record struct CopyOutcome(string? Text, bool InputFailed);
+    /// <summary>Text is null when nothing was copied; Failure is set when the copy could not even be attempted.</summary>
+    private readonly record struct CopyOutcome(string? Text, CaptureFailure? Failure = null);
 
     /// <summary>
     /// Puts a unique sentinel on the clipboard, sends Ctrl+C and waits for the clipboard to change.
@@ -170,20 +171,20 @@ public sealed class TextAccessService : ITextAccess
     private async Task<CopyOutcome> CopyOnceAsync(CancellationToken ct)
     {
         var sentinel = "​" + Guid.NewGuid().ToString("N");
-        if (!_clipboard.TrySetText(sentinel, hidden: true)) return new CopyOutcome(null, InputFailed: true);
+        if (!_clipboard.TrySetText(sentinel, hidden: true)) return new CopyOutcome(null, CaptureFailure.ClipboardBusy);
 
         var sequence = _clipboard.SequenceNumber;
-        if (!InputSimulator.CtrlChord(InputSimulator.VK_C)) return new CopyOutcome(null, InputFailed: true);
+        if (!InputSimulator.CtrlChord(InputSimulator.VK_C)) return new CopyOutcome(null, CaptureFailure.InputBlocked);
 
         var deadline = Environment.TickCount64 + (long)CopyTimeout.TotalMilliseconds;
         while (true)
         {
             var remaining = TimeSpan.FromMilliseconds(Math.Max(0, deadline - Environment.TickCount64));
-            if (!await _clipboard.WaitForChangeAsync(sequence, remaining, ct)) return new CopyOutcome(null, false);
+            if (!await _clipboard.WaitForChangeAsync(sequence, remaining, ct)) return new CopyOutcome(null);
 
             sequence = _clipboard.SequenceNumber;
             var text = _clipboard.TryGetText();
-            if (!string.IsNullOrEmpty(text) && text != sentinel) return new CopyOutcome(text, false);
+            if (!string.IsNullOrEmpty(text) && text != sentinel) return new CopyOutcome(text);
 
             // Some apps clear first and fill in later (several updates); give them a short follow-up window.
             deadline = Math.Min(deadline, Environment.TickCount64 + (long)CopyFollowUp.TotalMilliseconds);
@@ -282,13 +283,18 @@ public sealed class TextAccessService : ITextAccess
                 else return new ReplaceResult(selected, stopwatch.Elapsed);
             }
 
+            // Last point at which a cancel is honoured; the finally block restores the clipboard.
+            ct.ThrowIfCancellationRequested();
             if (!InputSimulator.CtrlChord(InputSimulator.VK_V))
             {
                 return new ReplaceResult(ReplaceFailure.InputBlocked, stopwatch.Elapsed);
             }
 
             pasteSentMs = stopwatch.ElapsedMilliseconds;
-            var finished = await Task.WhenAny(offer.Rendered, Task.Delay(PasteTimeout, ct));
+
+            // Once Ctrl+V is out, a cancel must not cut the wait short: the clipboard would be restored under a paste that
+            // may still be processed, and the target would paste the old clipboard content instead of the result.
+            var finished = await Task.WhenAny(offer.Rendered, Task.Delay(PasteTimeout, CancellationToken.None));
             renderedMs = stopwatch.ElapsedMilliseconds;
             if (finished != offer.Rendered)
             {
