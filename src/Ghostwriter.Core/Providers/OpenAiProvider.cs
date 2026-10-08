@@ -14,7 +14,7 @@ public sealed class OpenAiProvider : LlmProvider
     {
     }
 
-    protected override Uri BuildUri(LlmRequest request) => new(Settings.BaseUrl.TrimEnd('/') + "/responses");
+    protected override Uri BuildUri(LlmRequest request) => new(BaseUrl + "/responses");
 
     protected override JsonObject BuildBody(LlmRequest request) => new()
     {

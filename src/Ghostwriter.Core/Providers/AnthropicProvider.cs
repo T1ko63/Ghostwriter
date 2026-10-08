@@ -14,7 +14,7 @@ public sealed class AnthropicProvider : LlmProvider
     {
     }
 
-    protected override Uri BuildUri(LlmRequest request) => new(Settings.BaseUrl.TrimEnd('/') + "/v1/messages");
+    protected override Uri BuildUri(LlmRequest request) => new(BaseUrl + "/v1/messages");
 
     protected override JsonObject BuildBody(LlmRequest request) => new()
     {

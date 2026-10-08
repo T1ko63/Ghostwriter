@@ -16,7 +16,7 @@ public sealed class GeminiProvider : LlmProvider
     protected override Uri BuildUri(LlmRequest request)
     {
         var model = request.Model.StartsWith("models/", StringComparison.Ordinal) ? request.Model[7..] : request.Model;
-        return new Uri($"{Settings.BaseUrl.TrimEnd('/')}/models/{Uri.EscapeDataString(model)}:streamGenerateContent?alt=sse");
+        return new Uri($"{BaseUrl}/models/{Uri.EscapeDataString(model)}:streamGenerateContent?alt=sse");
     }
 
     protected override JsonObject BuildBody(LlmRequest request) => new()

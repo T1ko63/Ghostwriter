@@ -14,7 +14,7 @@ public sealed class OpenAiCompatibleProvider : LlmProvider
     {
     }
 
-    protected override Uri BuildUri(LlmRequest request) => new(Settings.BaseUrl.TrimEnd('/') + "/chat/completions");
+    protected override Uri BuildUri(LlmRequest request) => new(BaseUrl + "/chat/completions");
 
     protected override JsonObject BuildBody(LlmRequest request) => new()
     {

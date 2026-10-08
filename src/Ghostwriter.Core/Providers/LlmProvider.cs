@@ -44,6 +44,9 @@ public abstract class LlmProvider : ILlmProvider
 
     protected HttpClient Http { get; }
 
+    /// <summary>The configured base URL without a trailing slash, ready for appending a path.</summary>
+    protected string BaseUrl => Settings.BaseUrl.TrimEnd('/');
+
     // ---- adapter contract ----
 
     protected abstract Uri BuildUri(LlmRequest request);
@@ -60,7 +63,7 @@ public abstract class LlmProvider : ILlmProvider
     /// <summary>Reads one SSE event: enqueue text, set <see cref="StreamState.Completed"/>, or throw for failures.</summary>
     protected abstract void HandleEvent(SseEvent evt, StreamState state);
 
-    protected virtual Uri WarmUpUri => new(Settings.BaseUrl.TrimEnd('/') + "/");
+    protected virtual Uri WarmUpUri => new(BaseUrl + "/");
 
     protected LlmException Error(LlmErrorKind kind, string? detail = null, int? status = null, TimeSpan? retryAfter = null, Exception? inner = null)
         => new(kind, Settings.Name, Sanitize(detail), status, retryAfter, inner);

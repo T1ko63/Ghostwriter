@@ -279,8 +279,7 @@ public sealed class TextAccessService : ITextAccess
             if (capture.Origin == TextOrigin.WholeField)
             {
                 var selected = await SelectWholeFieldAsync(capture);
-                if (selected == ReplaceFailure.None) { /* proceed */ }
-                else return new ReplaceResult(selected, stopwatch.Elapsed);
+                if (selected != ReplaceFailure.None) return new ReplaceResult(selected, stopwatch.Elapsed);
             }
 
             // Last point at which a cancel is honoured; the finally block restores the clipboard.
