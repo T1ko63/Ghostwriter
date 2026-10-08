@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>InstaPrompt.App</RootNamespace>
+    <AssemblyName>InstaPrompt</AssemblyName>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <TieredPGO>true</TieredPGO>
+    <TieredCompilation>true</TieredCompilation>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\InstaPrompt.Core\InstaPrompt.Core.csproj" />
+    <ProjectReference Include="..\InstaPrompt.Platform\InstaPrompt.Platform.csproj" />
+  </ItemGroup>
+
+</Project>

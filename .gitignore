@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+*.user
+publish/
+
+# Secrets: nie committen
+settings.toml
+*.secret
