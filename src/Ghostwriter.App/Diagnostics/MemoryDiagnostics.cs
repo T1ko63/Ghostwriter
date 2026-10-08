@@ -22,18 +22,11 @@ public static class MemoryDiagnostics
         Log();
     }
 
-    /// <summary>Forces a full collection and logs what is really still alive afterwards.</summary>
-    public static void LogAfterCollect(string label)
-    {
-        GC.Collect(2, GCCollectionMode.Forced, blocking: true, compacting: true);
-        Log($"{label} (after full GC)");
-    }
-
-    private static void Log(string label = "memory")
+    private static void Log()
     {
         using var process = Process.GetCurrentProcess();
         var info = GC.GetGCMemoryInfo();
-        AppLog.Info($"{label}: working set {process.WorkingSet64 / 1048576.0:F0} MB, private {process.PrivateMemorySize64 / 1048576.0:F0} MB, "
+        AppLog.Info($"memory: working set {process.WorkingSet64 / 1048576.0:F0} MB, private {process.PrivateMemorySize64 / 1048576.0:F0} MB, "
             + $"managed heap {GC.GetTotalMemory(false) / 1048576.0:F1} MB (committed {info.TotalCommittedBytes / 1048576.0:F0} MB), "
             + $"GCs gen0/1/2 = {GC.CollectionCount(0)}/{GC.CollectionCount(1)}/{GC.CollectionCount(2)}, threads {process.Threads.Count}");
     }

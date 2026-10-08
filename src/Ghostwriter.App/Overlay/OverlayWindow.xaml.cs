@@ -85,8 +85,6 @@ public partial class OverlayWindow : Window
     /// <summary>The overlay lost the focus because the user clicked or switched elsewhere.</summary>
     public event Action? Dismissed;
 
-    public nint Handle => _hwnd;
-
     public bool IsShown => IsVisible && !_hiding;
 
     /// <summary>Creates the native window and renders the first frame off-screen, so the first real show is instant.</summary>

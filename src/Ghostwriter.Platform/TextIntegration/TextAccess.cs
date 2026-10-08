@@ -74,7 +74,7 @@ public sealed record CaptureResult(TextCapture? Capture, CaptureFailure Failure,
     public static CaptureResult Fail(CaptureFailure failure, string? detail = null) => new(null, failure, detail);
 }
 
-public sealed record ReplaceResult(ReplaceFailure Failure, TimeSpan Duration, string? Detail = null)
+public sealed record ReplaceResult(ReplaceFailure Failure, TimeSpan Duration)
 {
     public bool Success => Failure == ReplaceFailure.None;
 }

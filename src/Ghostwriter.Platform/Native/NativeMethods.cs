@@ -7,8 +7,6 @@ internal static class NativeMethods
 {
     // Window messages
     public const uint WM_NULL = 0x0000;
-    public const uint WM_DESTROY = 0x0002;
-    public const uint WM_LBUTTONUP = 0x0202;
     public const uint WM_RBUTTONUP = 0x0205;
     public const uint WM_RENDERFORMAT = 0x0305;
     public const uint WM_RENDERALLFORMATS = 0x0306;
@@ -18,7 +16,6 @@ internal static class NativeMethods
     public const uint WM_APP = 0x8000;
 
     // Clipboard formats
-    public const uint CF_TEXT = 1;
     public const uint CF_BITMAP = 2;
     public const uint CF_METAFILEPICT = 3;
     public const uint CF_PALETTE = 9;
@@ -189,9 +186,6 @@ internal static class NativeMethods
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
-
-    [DllImport("user32.dll")]
-    public static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
 
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")]
     public static extern nint SetWindowLongPtr(nint hWnd, int nIndex, nint dwNewLong);

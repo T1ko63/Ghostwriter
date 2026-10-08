@@ -10,7 +10,7 @@ public sealed class TrayIcon : IDisposable
 {
     private const uint NIM_ADD = 0, NIM_MODIFY = 1, NIM_DELETE = 2, NIM_SETVERSION = 4;
     private const uint NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4, NIF_INFO = 0x10;
-    private const uint NIIF_NONE = 0, NIIF_INFO = 1, NIIF_WARNING = 2, NIIF_ERROR = 3, NIIF_NOSOUND = 0x10;
+    private const uint NIIF_INFO = 1, NIIF_ERROR = 3, NIIF_NOSOUND = 0x10;
     private const uint MF_STRING = 0, MF_SEPARATOR = 0x800, MF_CHECKED = 8;
     private const uint TPM_RIGHTBUTTON = 2, TPM_RETURNCMD = 0x100, TPM_BOTTOMALIGN = 0x20;
     private const uint CallbackMessage = WM_APP + 1;
@@ -24,8 +24,6 @@ public sealed class TrayIcon : IDisposable
 
     /// <summary>Called right before the menu opens, so labels (e.g. check marks) are always current.</summary>
     public Func<IReadOnlyList<TrayMenuItem>> MenuProvider { get; set; } = () => [];
-
-    public Action? OnDoubleClick { get; set; }
 
     public TrayIcon(MessageWindow window, string tooltip)
     {
@@ -107,9 +105,6 @@ public sealed class TrayIcon : IDisposable
             case WM_RBUTTONUP:
             case 0x007B: // WM_CONTEXTMENU (keyboard)
                 ShowMenu();
-                break;
-            case 0x0203: // WM_LBUTTONDBLCLK
-                OnDoubleClick?.Invoke();
                 break;
         }
 

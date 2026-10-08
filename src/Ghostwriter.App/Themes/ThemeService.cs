@@ -42,8 +42,6 @@ public sealed class ThemeService
         });
     }
 
-    public AppTheme Mode => _mode;
-
     public bool IsDark { get; private set; }
 
     /// <summary>True when Acrylic or Mica is really in use (Windows 11): DWM then decides the corner size.</summary>

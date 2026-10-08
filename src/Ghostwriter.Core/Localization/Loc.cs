@@ -67,13 +67,7 @@ public static class Loc
             "The text has been changed since; nothing was overwritten."),
         ["undo_ambiguous"] = ("Das Ergebnis kommt mehrfach im Feld vor, nichts überschrieben.",
             "The result appears more than once in the field; nothing was overwritten."),
-        ["err_hotkey"] = ("Hotkey {0} ist bereits belegt.", "Hotkey {0} is already in use."),
 
-        ["tray_open_log"] = ("Log öffnen", "Open log"),
-        ["tray_theme"] = ("Design: {0}", "Theme: {0}"),
-        ["theme_system"] = ("System", "System"),
-        ["theme_light"] = ("Hell", "Light"),
-        ["theme_dark"] = ("Dunkel", "Dark"),
         ["tray_quit"] = ("Beenden", "Quit"),
     };
 
