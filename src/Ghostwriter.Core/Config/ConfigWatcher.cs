@@ -1,3 +1,5 @@
+using Ghostwriter.Core.Diagnostics;
+
 namespace Ghostwriter.Core.Config;
 
 /// <summary>Calls an action once after a burst of triggers has been quiet for the given time.</summary>
@@ -15,9 +17,10 @@ public sealed class Debouncer : IDisposable
             {
                 action();
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // A failing handler must not take the process down from a timer thread.
+                AppLog.Error("Debounced action failed.", ex);
             }
         });
     }

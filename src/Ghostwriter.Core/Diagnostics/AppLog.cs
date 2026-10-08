@@ -16,24 +16,28 @@ public static class AppLog
 
     public static string? FilePath => _path;
 
+    /// <summary>Opens the log in <paramref name="directory"/>. Never throws: without a writable folder the app simply runs without a log file.</summary>
     public static void Init(string directory, string fileName = "ghostwriter.log")
     {
-        Directory.CreateDirectory(directory);
-        _path = Path.Combine(directory, fileName);
         try
         {
+            Directory.CreateDirectory(directory);
+            _path = Path.Combine(directory, fileName);
+
             // Keep the log small: start over once it grows past 1 MB.
             if (File.Exists(_path) && new FileInfo(_path).Length > 1_000_000)
             {
                 File.Delete(_path);
             }
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Another instance may hold the file; logging is best effort.
+            // Another instance may hold the file, or the folder is not writable; logging is best effort.
+            System.Diagnostics.Debug.WriteLine($"Log init: {ex.GetType().Name}: {ex.Message}");
+            if (!Directory.Exists(directory)) _path = null;
         }
 
-        if (_writer is not null) return;
+        if (_writer is not null || _path is null) return;
         _writer = new Thread(WriteLoop) { IsBackground = true, Name = "Ghostwriter log writer", Priority = ThreadPriority.BelowNormal };
         _writer.Start();
     }

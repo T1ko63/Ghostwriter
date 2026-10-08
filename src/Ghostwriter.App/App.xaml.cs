@@ -38,18 +38,19 @@ public partial class App : Application
     private ThemeService? _theme;
 
     /// <summary>One-time move of the config folder from the old product name (%APPDATA%\InstaPrompt) to the new one.</summary>
-    private static void MigrateLegacyConfigDir(string legacyDir, string newDir)
+    /// <returns>A line for the log (written once the log is open), or null if there was nothing to do.</returns>
+    private static string? MigrateLegacyConfigDir(string legacyDir, string newDir)
     {
         try
         {
-            if (Directory.Exists(legacyDir) && !Directory.Exists(newDir))
-            {
-                Directory.Move(legacyDir, newDir);
-            }
+            if (!Directory.Exists(legacyDir) || Directory.Exists(newDir)) return null;
+            Directory.Move(legacyDir, newDir);
+            return $"Config folder moved from {legacyDir}.";
         }
-        catch
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // Never block startup over this; the app simply starts with fresh defaults in the new folder.
+            return $"Config folder could not be moved from {legacyDir} ({ex.GetType().Name}: {ex.Message}); starting with defaults.";
         }
     }
 
@@ -77,10 +78,11 @@ public partial class App : Application
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         _configDir = Environment.GetEnvironmentVariable("GHOSTWRITER_CONFIG_DIR")
             ?? Path.Combine(appData, "Ghostwriter");
-        MigrateLegacyConfigDir(Path.Combine(appData, "InstaPrompt"), _configDir);
+        var migration = MigrateLegacyConfigDir(Path.Combine(appData, "InstaPrompt"), _configDir);
         AppLog.Init(_configDir);
         var started = Stopwatch.GetTimestamp();
         AppLog.Info($"Start, elevated={TargetInfo.SelfIsElevated}");
+        if (migration is not null) AppLog.Warn(migration);
         InstallCrashGuards();
 
         // UI Automation takes a while to load; start that right away on a pool thread, in parallel to everything below.
