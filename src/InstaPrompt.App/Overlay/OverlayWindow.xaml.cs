@@ -111,9 +111,9 @@ public partial class OverlayWindow : Window
         Refresh();
     }
 
-    public void ApplyLook(bool dark, int borderColorRgb)
+    public void ApplyLook(bool dark, WindowBackdrop backdrop, int nativeCornerPx)
     {
-        if (_hwnd != 0) WindowHelper.ApplyLook(_hwnd, dark, borderColorRgb, WindowSkin.BackdropEnabled);
+        WindowSkin.ApplyLook(_hwnd, dark, backdrop, nativeCornerPx);
     }
 
     /// <summary>Desired size in device-independent units, for placement before the window is visible.</summary>
@@ -138,6 +138,7 @@ public partial class OverlayWindow : Window
     {
         if (!IsShown) return;
         WindowHelper.Activate(_hwnd);
+        WindowSkin.RefreshBackdrop(_hwnd);
         Search.Focus();
         Keyboard.Focus(Search);
         _activated = true;

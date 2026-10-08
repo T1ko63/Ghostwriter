@@ -41,9 +41,9 @@ public partial class StatusWindow : Window
     /// <summary>The user clicked the pill while it was showing progress.</summary>
     public event Action? CancelRequested;
 
-    public void ApplyLook(bool dark, int borderColorRgb)
+    public void ApplyLook(bool dark, WindowBackdrop backdrop, int nativeCornerPx)
     {
-        if (_hwnd != 0) WindowHelper.ApplyLook(_hwnd, dark, borderColorRgb, WindowSkin.BackdropEnabled);
+        WindowSkin.ApplyLook(_hwnd, dark, backdrop, nativeCornerPx);
     }
 
     public void Warmup()
@@ -112,7 +112,11 @@ public partial class StatusWindow : Window
 
         var (x, y) = anchor.PlaceWindow(new Size(Width, ActualHeight > 0 ? ActualHeight : Root.DesiredSize.Height + 2 * shadow));
         WindowHelper.MoveTo(_hwnd, x, y);
-        if (!IsVisible) Show();
+        if (!IsVisible)
+        {
+            Show();
+            WindowSkin.RefreshBackdrop(_hwnd);
+        }
     }
 
     private void StartLine(double trackWidth)

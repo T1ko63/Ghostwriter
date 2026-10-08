@@ -13,6 +13,19 @@ public readonly record struct PxRect(int Left, int Top, int Right, int Bottom)
 
 public readonly record struct MonitorArea(PxRect WorkArea, double Scale);
 
+/// <summary>
+/// The material behind a window. Acrylic, Mica and MicaAlt are DWM system backdrops (Windows 11 22H2+); Blur is the
+/// older "blur behind" accent (a plain Gaussian blur without noise or system tint).
+/// </summary>
+public enum WindowBackdrop
+{
+    None,
+    Acrylic,
+    Mica,
+    MicaAlt,
+    Blur,
+}
+
 /// <summary>Win32 helpers for the overlay windows: styles, DWM look, monitor geometry, placement.</summary>
 public static class WindowHelper
 {
@@ -26,8 +39,17 @@ public static class WindowHelper
     private const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWA_BORDER_COLOR = 34;
     private const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+    private const int DWMSBT_NONE = 1;
+    private const int DWMSBT_MAINWINDOW = 2;
     private const int DWMSBT_TRANSIENTWINDOW = 3;
+    private const int DWMSBT_TABBEDWINDOW = 4;
+    private const int WCA_ACCENT_POLICY = 19;
+    private const int ACCENT_DISABLED = 0;
+    private const int ACCENT_ENABLE_BLURBEHIND = 3;
+    private const int DWMWCP_DONOTROUND = 1;
     private const int DWMWCP_ROUND = 2;
+    private const int DWMWCP_ROUNDSMALL = 3;
+    private const int DWMWA_COLOR_NONE = unchecked((int)0xFFFFFFFE);
 
     /// <summary>Keeps the window out of Alt+Tab and, optionally, makes it never take the focus (status pill).</summary>
     public static void SetToolWindow(nint hwnd, bool noActivate)
@@ -41,25 +63,87 @@ public static class WindowHelper
     public static bool IsBackdropSupported { get; } = Environment.OSVersion.Version.Build >= 22621;
 
     /// <summary>
-    /// Win11 rounded corners, themed border and dark caption/shadow colours; with <paramref name="acrylic"/> also the
-    /// transient (Acrylic) system backdrop behind the window.
+    /// The dark/light mode of the window frame and, for a non-layered window, the system material behind it
+    /// (null for a layered window, which cannot have one). The 1 px border is drawn by the window itself, so DWM's own
+    /// border is switched off.
     /// </summary>
-    public static void ApplyLook(nint hwnd, bool dark, int borderColorRgb, bool acrylic = false)
+    /// <param name="nativeCornerPx">
+    /// Corner size DWM cuts the window (and its material) to: 0, 4 or 8. DWM offers nothing in between, and it draws
+    /// the material in the whole window rectangle whatever the window region says, so these three are all that
+    /// Acrylic and Mica can do. With 0 the window shapes itself (its panel is rounded; see the radius setting).
+    /// </param>
+    public static void ApplyLook(nint hwnd, bool dark, WindowBackdrop? backdrop, int nativeCornerPx)
     {
         var darkValue = dark ? 1 : 0;
         DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkValue, sizeof(int));
-        if (acrylic)
+        if (backdrop is { } material)
         {
-            var backdrop = DWMSBT_TRANSIENTWINDOW;
-            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdrop, sizeof(int));
+            var type = BackdropType(material);
+            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref type, sizeof(int));
+            SetBlurBehind(hwnd, material == WindowBackdrop.Blur);
         }
 
-        var corner = DWMWCP_ROUND;
+        var corner = nativeCornerPx switch
+        {
+            >= 8 => DWMWCP_ROUND,
+            >= 4 => DWMWCP_ROUNDSMALL,
+            _ => DWMWCP_DONOTROUND,
+        };
         DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
 
-        // COLORREF is 0x00BBGGRR.
-        var colorRef = ((borderColorRgb & 0xFF) << 16) | (borderColorRgb & 0xFF00) | ((borderColorRgb >> 16) & 0xFF);
-        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref colorRef, sizeof(int));
+        var noBorder = DWMWA_COLOR_NONE;
+        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref noBorder, sizeof(int));
+    }
+
+    // Blur uses the accent API instead of a DWM backdrop, so the DWM backdrop is switched off for it (and for None).
+    private static int BackdropType(WindowBackdrop material) => material switch
+    {
+        WindowBackdrop.Acrylic => DWMSBT_TRANSIENTWINDOW,
+        WindowBackdrop.Mica => DWMSBT_MAINWINDOW,
+        WindowBackdrop.MicaAlt => DWMSBT_TABBEDWINDOW,
+        _ => DWMSBT_NONE,
+    };
+
+    /// <summary>
+    /// Sets the material again on a window that has just been activated. A window shown without activation gets its
+    /// material from DWM in the flat fallback state (no blur, a solid grey), and setting the same value again changes
+    /// nothing; switching it off and on once while the window is active makes DWM build the real material.
+    /// </summary>
+    public static void RefreshBackdrop(nint hwnd, WindowBackdrop backdrop)
+    {
+        if (backdrop == WindowBackdrop.None) return;
+        if (backdrop == WindowBackdrop.Blur)
+        {
+            SetBlurBehind(hwnd, false);
+            SetBlurBehind(hwnd, true);
+            return;
+        }
+
+        var off = DWMSBT_NONE;
+        DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref off, sizeof(int));
+        var type = BackdropType(backdrop);
+        DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref type, sizeof(int));
+    }
+
+    /// <summary>
+    /// The "blur behind" accent: a Gaussian blur of what is behind the window, with no tint of its own (the window's
+    /// surface colour provides that). Undocumented but long-standing user32 API; the blur always fills the whole window.
+    /// </summary>
+    private static void SetBlurBehind(nint hwnd, bool enabled)
+    {
+        var accent = new ACCENT_POLICY { AccentState = enabled ? ACCENT_ENABLE_BLURBEHIND : ACCENT_DISABLED };
+        var size = Marshal.SizeOf<ACCENT_POLICY>();
+        var data = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.StructureToPtr(accent, data, fDeleteOld: false);
+            var attribute = new WINDOWCOMPOSITIONATTRIBDATA { Attribute = WCA_ACCENT_POLICY, Data = data, SizeOfData = size };
+            SetWindowCompositionAttribute(hwnd, ref attribute);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(data);
+        }
     }
 
     public static ScreenPoint GetCursor()

@@ -42,7 +42,15 @@ public partial class App : Application
         base.OnStartup(e);
 
         // A name that cannot clash with another tool called "InstaPrompt" (which would make one of the two exit at start).
-        _singleInstance = new Mutex(true, @"Local\InstaPrompt.Claude.5c0e7a52-9f3b-4d86-8f41-2b6d1e0a9c37", out var isFirst);
+        // With INSTAPROMPT_CONFIG_DIR set (tests, a second copy side by side) the lock is per config folder.
+        var mutexName = @"Local\InstaPrompt.Claude.5c0e7a52-9f3b-4d86-8f41-2b6d1e0a9c37";
+        if (Environment.GetEnvironmentVariable("INSTAPROMPT_CONFIG_DIR") is { Length: > 0 } otherDir)
+        {
+            mutexName += "." + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(otherDir).ToLowerInvariant())))[..16];
+        }
+
+        _singleInstance = new Mutex(true, mutexName, out var isFirst);
         if (!isFirst)
         {
             Shutdown();
@@ -112,7 +120,7 @@ public partial class App : Application
 
         ApplyConfig(loaded, initial: true);
         Lap("apply config+hotkeys");
-        if (loaded.HasErrors) ReportIssues(loaded, manual: false);
+        if (loaded.HasErrors || loaded.Issues.Any(i => i.Show)) ReportIssues(loaded, manual: false);
         else ShowStartupHint(firstRun);
 
         // From here on, edits to settings.toml / prompts.toml are picked up while the app runs.
@@ -265,7 +273,7 @@ public partial class App : Application
     {
         // INSTAPROMPT_THEME overrides settings.toml (handy for testing both looks).
         var text = Environment.GetEnvironmentVariable("INSTAPROMPT_THEME") ?? settings.Theme;
-        _theme!.Set(Enum.TryParse<AppTheme>(text, ignoreCase: true, out var theme) ? theme : AppTheme.System, settings.Accent);
+        _theme!.Set(Enum.TryParse<AppTheme>(text, ignoreCase: true, out var theme) ? theme : AppTheme.System, settings.Accent, settings.Appearance);
     }
 
     /// <summary>Registers the overlay, inline and all prompt hotkeys anew. Hotkeys another app already owns are reported.</summary>
@@ -330,6 +338,14 @@ public partial class App : Application
             _controller!.ShowNotice(message);
             _tray!.ShowMessage("InstaPrompt", message, isError: true);
         }
+        else if (result.Issues.Where(i => i.Show).ToList() is { Count: > 0 } notices)
+        {
+            // A value that fell back to its default (e.g. in [appearance]): the rest of the configuration is active.
+            var more = notices.Count > 1 ? Loc.Get("cfg_more", notices.Count - 1) : string.Empty;
+            var message = FormatIssue(notices[0]) + more;
+            _controller!.ShowNotice(message);
+            _tray!.ShowMessage("InstaPrompt", message, isError: false);
+        }
         else if (manual)
         {
             _controller!.ShowNotice(Loc.Get("cfg_reloaded", _config!.Current.Prompts.Count));
@@ -343,8 +359,8 @@ public partial class App : Application
 
     private void ApplyLook(OverlayWindow overlay, StatusWindow status)
     {
-        overlay.ApplyLook(_theme!.IsDark, _theme.BorderColorRgb);
-        status.ApplyLook(_theme.IsDark, _theme.BorderColorRgb);
+        overlay.ApplyLook(_theme!.IsDark, _theme.Backdrop, _theme.NativeCornerPx);
+        status.ApplyLook(_theme.IsDark, _theme.Backdrop, _theme.NativeCornerPx);
     }
 
     private IReadOnlyList<TrayMenuItem> BuildMenu() =>

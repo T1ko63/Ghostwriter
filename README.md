@@ -44,10 +44,10 @@ nicht per Strg+Z der Ziel-App, weil dessen Verhalten je nach App unterschiedlich
 können Formatierung (Rich-Text) und Cursorposition verloren gehen; die App-eigene Undo-Liste (Strg+Z) bleibt meist erhalten.
 
 **Aussehen:** Das Overlay ist bewusst reduziert: oben die Suche, darunter nur Name und (falls vorhanden) Hotkey jedes Prompts,
-links die Ziffern zum Direktwählen. Auf Windows 11 liegt es auf dem Acrylic-Material des Systems (echter Blur), sonst auf einer
-halbtransparenten Fläche. Hell/Dunkel folgt Windows (`theme`), die Auswahl ist neutral; mit `accent` bekommen Auswahlzeile,
-Textcursor und Fortschrittslinie eine Farbe. Alle Farben, Radien, Abstände und Schriftgrößen stehen an einer Stelle:
-`src\InstaPrompt.App\Themes\Design.xaml`.
+links die Ziffern zum Direktwählen. Hell/Dunkel folgt Windows (`theme`). Transparenz, Eckenradius, Blur und die drei Farben jedes
+Themes stehen im Block `[appearance]` der `settings.toml` (siehe unten); alle Nebenfarben (gedämpfter Text, Trennlinie, Scrollbar,
+Hover) werden aus der Textfarbe abgeleitet. `accent` färbt nur noch Textcursor, Textmarkierung und Fortschrittslinie, die Auswahlzeile
+bestimmt `selection`. Maße, Schriftgrößen und Abstände stehen weiter an einer Stelle: `src\InstaPrompt.App\Themes\Design.xaml`.
 
 **Tray-Menü:** Config-Ordner öffnen · Config neu laden · Mit Windows starten · Beenden.
 
@@ -65,12 +65,17 @@ overlay_hotkey = "Ctrl+Shift+Space"
 marker_start = "<<"
 marker_end   = ">>"
 theme = "system"            # system | light | dark
-accent = "none"             # none (neutral) | system (Windows-Akzent) | Hex wie "#3B82F6"
+accent = "none"             # none (neutral) | system (Windows-Akzent) | Hex wie "#3B82F6": Cursor, Textmarkierung, Fortschrittslinie
 undo_hotkey = "Ctrl+Alt+Z"  # letzte Ersetzung rückgängig
 undo_history = 10           # so viele Ersetzungen werden gemerkt (0 = aus)
 autostart = false
 idle_trim_seconds = 90      # gibt nach Ruhe ungenutzten Speicher frei (0 = nie)
 default_provider = "gemini"
+
+[appearance]                # Aussehen: siehe „Aussehen einstellen“ unten
+transparency = 50
+radius = 10
+blur = "acrylic"
 
 [providers.gemini]
 type = "gemini"             # openai | gemini | anthropic | openai-compatible
@@ -78,6 +83,45 @@ model = "gemini-2.5-flash"
 api_key_env = "GEMINI_API_KEY"   # oder api_key = "..."
 reasoning = "off"           # off | default | low | medium | high
 ```
+
+### Aussehen einstellen (`[appearance]`)
+
+```toml
+[appearance]
+transparency = 50           # 0-100 %: 0 = deckend, 100 = vollständig durchsichtig (über 90 leidet die Lesbarkeit)
+radius       = 10           # Eckenradius in px, 0-32
+blur         = "acrylic"    # acrylic | blur | mica | micaalt | none
+border       = true         # feiner Rand um das Fenster: true | false
+
+[appearance.dark]           # gilt, wenn das aktive Theme dunkel ist
+background = "#000000"      # #RRGGBB oder rgb(r, g, b); ein Alpha-Anteil wird ignoriert und gemeldet
+foreground = "#F0F0F0"      # Haupttext, daraus werden alle Nebenfarben abgeleitet
+selection  = "#40FFFFFF"    # ausgewählte Zeile: #AARRGGBB (Alpha ZUERST, wie WPF, nicht wie CSS), #RRGGBB oder rgba(r, g, b, a); Hover = halbe Deckkraft
+
+[appearance.light]
+background = "#FFFFFF"
+foreground = "#1A1A1A"
+selection  = "#40000000"
+```
+
+* **transparency** wirkt nur auf die Fensterfläche (Deckkraft = 100 − transparency, auf `background` angewendet; bei `acrylic` ist das
+  die Tönung über dem Blur). Text, Trennlinie, Scrollbar und Auswahl bleiben voll sichtbar.
+* **blur** (Wert `acrylic | blur | mica | micaalt | none`):
+  `acrylic` = Windows-11-Acrylic (Blur mit Rauschen und Systemtönung, DWM-Material), `blur` = schlichter „Blur behind“ ohne eigene Tönung
+  (über die undokumentierte `SetWindowCompositionAttribute`-Schnittstelle; die durchsichtigste Variante), `mica` = Windows-11-Mica,
+  `micaalt` = Mica Alt (kräftigere, dunklere Tönung), `none` = kein Blur, die Fläche liegt mit der eingestellten Transparenz direkt über
+  dem Hintergrund. Auf Systemen ohne Windows-11-Unterstützung (oder mit `INSTAPROMPT_BACKDROP=off`) gibt es immer eine halbtransparente
+  einfarbige Fläche ohne Blur. Acrylic, Blur und Mica(Alt) werden von Windows erst gezeichnet, wenn das Fenster aktiv ist; die App setzt
+  sie deshalb nach dem Aktivieren neu (für etwa 10 ms steht beim Öffnen kurz eine flache Fläche).
+* **Mica und Mica Alt sind nicht durchsichtig:** Sie nehmen nur die Farbe des Desktop-Hintergrunds auf. `transparency` mischt dort nur die
+  Tönung zwischen `background` (0) und reinem Mica (100); es scheint nichts durch. Die Status-Pille ist nie aktiv und zeigt bei Mica
+  eine einfarbige Ersatzfläche.
+* **radius:** Windows schneidet das Fenster bei Acrylic, Blur und Mica selbst zu und kennt nur 0, 4 und 8 px; der Wert rastet dort auf die
+  nächste dieser Stufen ein. Bei `none` und im Fallback gilt der Radius exakt. Die Ecken der Zeilen-Hervorhebung sind aus `radius`
+  abgeleitet (etwa 60 %).
+* Fehlt ein Wert oder der Block, gelten die gezeigten Standardwerte. Ein ungültiger Wert (Farbe, Blur, Zahl außerhalb des Bereichs)
+  erzeugt eine kurze Meldung mit Datei und Zeile, fällt auf den Standard zurück, und alles andere bleibt aktiv. Änderungen werden beim
+  Speichern übernommen, nicht erst beim nächsten Einblenden.
 
 Anbieter: `openai` (Responses API), `gemini`, `anthropic` (Messages API) und `openai-compatible` für lokale Server
 wie Ollama oder LM Studio (`base_url = "http://localhost:11434/v1"`). Modellnamen stehen nur in dieser Datei.
@@ -140,9 +184,9 @@ abbrechen), Fenster mit Administratorrechten (Windows blockiert Eingaben von au�
 
 | Variable | Wirkung |
 |---|---|
-| `INSTAPROMPT_CONFIG_DIR` | anderer Config-Ordner (Tests, zweite Kopie nebenher) |
+| `INSTAPROMPT_CONFIG_DIR` | anderer Config-Ordner (Tests); die Einzelinstanz-Sperre gilt dann pro Ordner, so läuft eine zweite Kopie nebenher |
 | `INSTAPROMPT_THEME` | `light`/`dark`/`system`, überschreibt `settings.toml` |
-| `INSTAPROMPT_BACKDROP=off` | schaltet das Acrylic-Material ab (zeigt den Fallback wie auf Windows 10) |
+| `INSTAPROMPT_BACKDROP=off` | schaltet das Windows-11-Material ab (zeigt den Fallback wie auf Windows 10: halbtransparent, ohne Blur) |
 | `INSTAPROMPT_DIAG=1` | loggt alle 5 s Speicher und GC-Zahlen |
 | `INSTAPROMPT_TRIM_SECONDS=N` | überschreibt `idle_trim_seconds` |
 

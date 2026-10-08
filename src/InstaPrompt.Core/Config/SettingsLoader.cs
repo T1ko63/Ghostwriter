@@ -20,6 +20,7 @@ public static class SettingsLoader
     {
         "overlay_hotkey", "marker_start", "marker_end", "theme", "autostart", "overlay_position", "language",
         "idle_trim_seconds", "default_provider", "providers", "accent", "undo_hotkey", "undo_history",
+        "appearance",
     };
 
     private static readonly HashSet<string> ProviderKeys = new(StringComparer.Ordinal)
@@ -82,6 +83,8 @@ public static class SettingsLoader
             reader.Issue(reader.LineOf("idle_trim_seconds"), "idle_trim_seconds must not be negative (0 = never)", isError: true);
         }
 
+        var appearance = AppearanceLoader.Read(root, reader);
+
         var providers = new Dictionary<string, ProviderSettings>(StringComparer.OrdinalIgnoreCase);
         if (root.TryGetValue("providers", out var providersValue))
         {
@@ -127,7 +130,10 @@ public static class SettingsLoader
 
         var settings = new AppSettings(
             overlayHotkey, markerStart, markerEnd, theme, autostart, position, language, idleTrim,
-            defaultProvider.Length == 0 ? null : defaultProvider, providers, accent.ToLowerInvariant(), undoHotkey, undoHistory);
+            defaultProvider.Length == 0 ? null : defaultProvider, providers, accent.ToLowerInvariant(), undoHotkey, undoHistory)
+        {
+            Appearance = appearance,
+        };
         return new SettingsLoadResult(issues.Any(i => i.IsError) ? null : settings, issues);
     }
 

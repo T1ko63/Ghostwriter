@@ -226,6 +226,27 @@ internal static class NativeMethods
     [DllImport("dwmapi.dll")]
     public static extern int DwmSetWindowAttribute(nint hwnd, int attribute, ref int value, int size);
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ACCENT_POLICY
+    {
+        public int AccentState;
+        public int AccentFlags;
+        public uint GradientColor;
+        public int AnimationId;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct WINDOWCOMPOSITIONATTRIBDATA
+    {
+        public int Attribute;
+        public nint Data;
+        public int SizeOfData;
+    }
+
+    /// <summary>Undocumented, but used by the Windows shell and many apps for the "blur behind" effect.</summary>
+    [DllImport("user32.dll")]
+    public static extern int SetWindowCompositionAttribute(nint hwnd, ref WINDOWCOMPOSITIONATTRIBDATA data);
+
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
 

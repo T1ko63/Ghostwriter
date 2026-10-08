@@ -16,7 +16,7 @@ internal sealed class TomlReader
         _issues = issues;
     }
 
-    public void Issue(int? line, string message, bool isError) => _issues.Add(new ConfigIssue(_file, line, message, isError));
+    public void Issue(int? line, string message, bool isError, bool show = false) => _issues.Add(new ConfigIssue(_file, line, message, isError, show));
 
     /// <summary>
     /// First 1-based line in [from, to] that defines <paramref name="key"/> (or a table header containing it).
@@ -66,7 +66,13 @@ internal sealed class TomlReader
     /// <summary>The last line of the file (1-based).</summary>
     public int LastLine => _lines.Length;
 
-    private static string Compact(string line) => line.Replace(" ", string.Empty).Replace("\t", string.Empty).TrimEnd('\r');
+    /// <summary>The line without blanks and without a trailing comment, so "[table]  # note" still counts as a header.</summary>
+    private static string Compact(string line)
+    {
+        var compact = line.Replace(" ", string.Empty).Replace("\t", string.Empty).TrimEnd('\r');
+        var comment = compact.IndexOf('#');
+        return comment >= 0 ? compact[..comment] : compact;
+    }
 
     public string Choice(TomlTable table, string key, string fallback, string[]? allowed, Func<string, int?>? line = null)
     {
