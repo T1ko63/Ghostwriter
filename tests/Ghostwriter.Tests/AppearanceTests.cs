@@ -74,7 +74,7 @@ public class ColorParserTests
     public void Alpha_comes_first_not_last()
     {
         // CSS would read #FF000080 as red at 50 %; here it is alpha FF, red 00, green 00, blue 80.
-        ColorParser.TryParse("#FF000080", out var color, out _);
+        Assert.True(ColorParser.TryParse("#FF000080", out var color, out _));
         Assert.Equal(new Rgba(0xFF, 0x00, 0x00, 0x80), color);
     }
 

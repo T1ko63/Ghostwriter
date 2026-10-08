@@ -75,11 +75,11 @@ public static class WindowHelper
     public static void ApplyLook(nint hwnd, bool dark, WindowBackdrop? backdrop, int nativeCornerPx)
     {
         var darkValue = dark ? 1 : 0;
-        DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkValue, sizeof(int));
+        _ = DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkValue, sizeof(int));
         if (backdrop is { } material)
         {
             var type = BackdropType(material);
-            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref type, sizeof(int));
+            _ = DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref type, sizeof(int));
             SetBlurBehind(hwnd, material == WindowBackdrop.Blur);
         }
 
@@ -89,10 +89,10 @@ public static class WindowHelper
             >= 4 => DWMWCP_ROUNDSMALL,
             _ => DWMWCP_DONOTROUND,
         };
-        DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
+        _ = DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref corner, sizeof(int));
 
         var noBorder = DWMWA_COLOR_NONE;
-        DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref noBorder, sizeof(int));
+        _ = DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref noBorder, sizeof(int));
     }
 
     // Blur uses the accent API instead of a DWM backdrop, so the DWM backdrop is switched off for it (and for None).
@@ -120,9 +120,9 @@ public static class WindowHelper
         }
 
         var off = DWMSBT_NONE;
-        DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref off, sizeof(int));
+        _ = DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref off, sizeof(int));
         var type = BackdropType(backdrop);
-        DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref type, sizeof(int));
+        _ = DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref type, sizeof(int));
     }
 
     /// <summary>
@@ -138,7 +138,7 @@ public static class WindowHelper
         {
             Marshal.StructureToPtr(accent, data, fDeleteOld: false);
             var attribute = new WINDOWCOMPOSITIONATTRIBDATA { Attribute = WCA_ACCENT_POLICY, Data = data, SizeOfData = size };
-            SetWindowCompositionAttribute(hwnd, ref attribute);
+            _ = SetWindowCompositionAttribute(hwnd, ref attribute);
         }
         finally
         {

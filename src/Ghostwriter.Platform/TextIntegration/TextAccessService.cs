@@ -173,7 +173,7 @@ public sealed class TextAccessService : ITextAccess
         var sentinel = "​" + Guid.NewGuid().ToString("N");
         if (!_clipboard.TrySetText(sentinel, hidden: true)) return new CopyOutcome(null, CaptureFailure.ClipboardBusy);
 
-        var sequence = _clipboard.SequenceNumber;
+        var sequence = ClipboardService.SequenceNumber;
         if (!InputSimulator.CtrlChord(InputSimulator.VK_C)) return new CopyOutcome(null, CaptureFailure.InputBlocked);
 
         var deadline = Environment.TickCount64 + (long)CopyTimeout.TotalMilliseconds;
@@ -182,7 +182,7 @@ public sealed class TextAccessService : ITextAccess
             var remaining = TimeSpan.FromMilliseconds(Math.Max(0, deadline - Environment.TickCount64));
             if (!await _clipboard.WaitForChangeAsync(sequence, remaining, ct)) return new CopyOutcome(null);
 
-            sequence = _clipboard.SequenceNumber;
+            sequence = ClipboardService.SequenceNumber;
             var text = _clipboard.TryGetText();
             if (!string.IsNullOrEmpty(text) && text != sentinel) return new CopyOutcome(text);
 

@@ -13,7 +13,7 @@ public static class NativeTimer
     {
         if (on == _high) return;
         _high = on;
-        if (on) NativeMethods.timeBeginPeriod(1);
-        else NativeMethods.timeEndPeriod(1);
+        if (on) _ = NativeMethods.timeBeginPeriod(1); // best effort: without it waits are only coarser
+        else _ = NativeMethods.timeEndPeriod(1);
     }
 }

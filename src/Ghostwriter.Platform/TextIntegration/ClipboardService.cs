@@ -59,7 +59,7 @@ public sealed class ClipboardService : IDisposable
         AddClipboardFormatListener(window.Handle);
     }
 
-    public uint SequenceNumber => GetClipboardSequenceNumber();
+    public static uint SequenceNumber => GetClipboardSequenceNumber();
 
     // ---- change detection ----
 

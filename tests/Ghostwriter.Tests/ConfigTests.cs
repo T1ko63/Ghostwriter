@@ -245,7 +245,7 @@ public class ConfigValidatorTests
     }
 }
 
-public class ConfigManagerTests : IDisposable
+public sealed class ConfigManagerTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "ip-cfg-" + Guid.NewGuid().ToString("N"));
 
@@ -467,7 +467,7 @@ public class ConfigManagerTests : IDisposable
     }
 }
 
-public class ConfigWatcherTests : IDisposable
+public sealed class ConfigWatcherTests : IDisposable
 {
     private readonly string _dir = Path.Combine(Path.GetTempPath(), "ip-watch-" + Guid.NewGuid().ToString("N"));
 

@@ -3,7 +3,7 @@ namespace Ghostwriter.Core.Providers;
 /// <summary>The configured providers, created on demand and sharing one HttpClient (so connections can be reused and warmed up).</summary>
 public sealed class ProviderRegistry : IDisposable
 {
-    private readonly IReadOnlyDictionary<string, ProviderSettings> _settings;
+    private readonly Dictionary<string, ProviderSettings> _settings;
     private readonly Dictionary<string, ILlmProvider> _providers = new(StringComparer.OrdinalIgnoreCase);
     private readonly HttpClient _http;
     private readonly bool _ownsHttp;

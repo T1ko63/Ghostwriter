@@ -247,7 +247,7 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private System.Windows.Controls.ListBoxItem? ItemsControlContainer(DependencyObject source)
+    private static System.Windows.Controls.ListBoxItem? ItemsControlContainer(DependencyObject source)
     {
         for (var node = source; node is not null; node = VisualTreeHelper.GetParent(node))
         {

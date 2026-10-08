@@ -5,5 +5,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
     <NoWarn>$(NoWarn);SYSLIB1054</NoWarn>
+    <!-- Keep the build at zero warnings: every new compiler or analyzer warning fails it. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-minimum</AnalysisLevel>
   </PropertyGroup>
 </Project>
