@@ -196,6 +196,13 @@ public static class SettingsLoader
         var baseUrl = reader.Choice(table, "base_url", DefaultBaseUrl(type.Value), null, Line).TrimEnd('/');
         var failed = false;
         string? apiKey = table.TryGetValue("api_key", out var keyValue) ? keyValue as string : null;
+        var keyHasWrongType = keyValue is not null and not string;
+        if (keyHasWrongType)
+        {
+            // Stays a warning as before (the provider just has no key); only the message now names the real problem.
+            reader.Issue(Line("api_key"), $"[providers.{name}] api_key must be text (in quotes)", isError: false);
+        }
+
         var keyEnvName = reader.Choice(table, "api_key_env", string.Empty, null, Line);
         if (string.IsNullOrWhiteSpace(apiKey) && keyEnvName.Length > 0)
         {
@@ -207,7 +214,7 @@ public static class SettingsLoader
         }
 
         apiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey.Trim();
-        if (apiKey is null && type != ProviderType.OpenAiCompatible && keyEnvName.Length == 0)
+        if (apiKey is null && type != ProviderType.OpenAiCompatible && keyEnvName.Length == 0 && !keyHasWrongType)
         {
             reader.Issue(Line("api_key"), $"[providers.{name}] no api_key or api_key_env set", isError: false);
         }

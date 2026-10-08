@@ -267,4 +267,17 @@ public class SettingsLoaderTests
             if (Directory.Exists(dir)) Directory.Delete(dir, recursive: true);
         }
     }
+
+    [Fact]
+    public void Api_key_that_is_not_text_is_a_warning_naming_the_real_problem()
+    {
+        var result = Parse("[providers.a]\ntype = \"openai\"\nmodel = \"m\"\napi_key = 123\n");
+
+        // Still only a warning: the file loads as before, the provider simply has no key.
+        Assert.True(result.Ok, string.Join("; ", result.Issues));
+        Assert.Null(result.Settings!.Providers["a"].ApiKey);
+        var warning = Assert.Single(result.Issues, i => !i.IsError && i.Message.Contains("api_key"));
+        Assert.Contains("must be text", warning.Message);
+        Assert.Equal(4, warning.Line);
+    }
 }
