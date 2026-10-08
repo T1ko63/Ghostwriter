@@ -36,8 +36,8 @@ public sealed class TextAccessService : ITextAccess
             ? $"UIA probe [{target.ProcessName}]: no answer ({Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms)"
             : $"UIA probe [{target.ProcessName}]: {info.ControlType}, textPattern={info.HasTextPattern}, selectionKnown={info.SelectionKnown}, "
               + $"selected={info.SelectedText?.Length ?? -1}, whole={info.WholeText?.Length ?? -1}, editable={info.IsEditable}, "
-              + $"readOnly={info.IsReadOnly}, tooLong={info.TooLong}, framework={info.FrameworkId}, class='{info.ElementClass}', "
-              + $"name='{info.ElementName}' ({Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms)");
+              + $"readOnly={info.IsReadOnly}, tooLong={info.TooLong}, framework={info.FrameworkId}, class='{info.ElementClass}' "
+              + $"({Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms)");
         return new FocusProbe(info);
     }
 

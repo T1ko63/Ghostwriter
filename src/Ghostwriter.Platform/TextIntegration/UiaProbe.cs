@@ -26,9 +26,7 @@ public sealed record UiaFocusInfo(
     /// </summary>
     public bool IsWebEngine { get; init; }
 
-    /// <summary>Diagnostics only: lets the log show which kind of element a fast/slow or wrong capture came from.</summary>
-    public string? ElementName { get; init; }
-
+    /// <summary>Diagnostics only: lets the log show which kind of element a fast/slow or wrong capture came from (never its name or text).</summary>
     public string? ElementClass { get; init; }
 
     public string? FrameworkId { get; init; }
@@ -137,9 +135,6 @@ internal static class UiaProbe
         AppLog.Info($"UIA select-all mismatch: selection has {selected.Length} chars, field has {expected.Length}.");
         return false;
     }
-
-    private static string Shorten(string? text)
-        => string.IsNullOrEmpty(text) ? string.Empty : text.Length <= 60 ? text : text[..60] + "…";
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd('\n', ' ');
 
@@ -261,7 +256,6 @@ internal static class UiaProbe
             {
                 Element = element,
                 IsWebEngine = isWebEngine,
-                ElementName = Shorten(current.Name),
                 ElementClass = current.ClassName,
                 FrameworkId = current.FrameworkId,
             };

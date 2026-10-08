@@ -319,7 +319,9 @@ public sealed class AppController
         catch (LlmException ex)
         {
             // Nothing was pasted: the original text is untouched.
-            AppLog.Warn($"AI call failed: {ex.Provider}: {ex.Kind} (HTTP {ex.StatusCode?.ToString() ?? "-"}) {ex.Detail}");
+            // A rejected request may quote parts of the user's text back; that detail is shown, but not written to the log.
+            var logDetail = ex.Kind == LlmErrorKind.BadRequest ? string.Empty : ex.Detail;
+            AppLog.Warn($"AI call failed: {ex.Provider}: {ex.Kind} (HTTP {ex.StatusCode?.ToString() ?? "-"}) {logDetail}");
             _status.ShowError(Describe(ex), session.Anchor);
         }
         catch (Exception ex)
