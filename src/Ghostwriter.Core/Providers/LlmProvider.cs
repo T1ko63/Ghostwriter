@@ -70,7 +70,8 @@ public abstract class LlmProvider : ILlmProvider
     public async IAsyncEnumerable<string> StreamAsync(LlmRequest request, [EnumeratorCancellation] CancellationToken ct)
     {
         var variants = ReasoningVariants();
-        var memoryKey = $"{Settings.Name}|{request.Model}|{Settings.Reasoning}";
+        // Type and address are part of the key: a reloaded provider of the same name may be a different API.
+        var memoryKey = $"{Settings.Name}|{Settings.Type}|{Settings.BaseUrl}|{request.Model}|{Settings.Reasoning}";
         var index = WorkingVariant.TryGetValue(memoryKey, out var remembered) && remembered < variants.Count ? remembered : 0;
 
         while (true)
@@ -132,6 +133,11 @@ public abstract class LlmProvider : ILlmProvider
         catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
         {
             // Purely an optimisation; the real request will report real problems.
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // The contract is "never throws" (callers fire and forget); anything unexpected is still worth a log line.
+            AppLog.Warn($"{Settings.Name}: warm-up failed ({ex.GetType().Name}).");
         }
     }
 
