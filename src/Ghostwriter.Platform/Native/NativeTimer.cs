@@ -1,9 +1,19 @@
 namespace Ghostwriter.Platform.Native;
 
-/// <summary>Raises the system timer resolution to 1 ms so short Task.Delay/wait calls are not rounded up to ~15 ms.</summary>
+/// <summary>
+/// Raises the system timer resolution to 1 ms so short Task.Delay/wait calls are not rounded up to ~15 ms. Only
+/// needed while a hotkey is being handled; keeping it raised while the app idles in the tray would cost energy.
+/// Call from the UI thread only.
+/// </summary>
 public static class NativeTimer
 {
-    public static void BeginHighResolution() => NativeMethods.timeBeginPeriod(1);
+    private static bool _high;
 
-    public static void EndHighResolution() => NativeMethods.timeEndPeriod(1);
+    public static void SetHighResolution(bool on)
+    {
+        if (on == _high) return;
+        _high = on;
+        if (on) NativeMethods.timeBeginPeriod(1);
+        else NativeMethods.timeEndPeriod(1);
+    }
 }

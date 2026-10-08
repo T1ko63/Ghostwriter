@@ -97,9 +97,6 @@ public partial class App : Application
             lapStart = now;
         }
 
-        // Task.Delay and waits get 1 ms resolution instead of ~15 ms.
-        NativeTimer.BeginHighResolution();
-
         // Both files are read before any window exists; a broken file never prevents the start.
         _config = new ConfigManager(_configDir, Environment.GetEnvironmentVariable);
         var firstRun = !File.Exists(_config.SettingsPath);
@@ -403,7 +400,7 @@ public partial class App : Application
         _clipboard?.Dispose();
         _http?.Dispose();
         _window?.Dispose();
-        NativeTimer.EndHighResolution();
+        NativeTimer.SetHighResolution(false);
         _singleInstance?.Dispose();
         AppLog.Info("Exit.");
         AppLog.Flush();

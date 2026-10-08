@@ -6,6 +6,7 @@ using Ghostwriter.Core.Localization;
 using Ghostwriter.Core.Prompts;
 using Ghostwriter.Core.Providers;
 using Ghostwriter.Core.Undo;
+using Ghostwriter.Platform.Native;
 using Ghostwriter.Platform.TextIntegration;
 using Ghostwriter.Platform.Windowing;
 
@@ -28,6 +29,16 @@ public sealed class AppController
     private Session? _session;
     private CancellationTokenSource? _runCts;
     private bool _busy;
+
+    /// <summary>Set while the overlay is up or a run is active; the 1 ms timer resolution is only held for that time.</summary>
+    private bool Busy
+    {
+        set
+        {
+            _busy = value;
+            NativeTimer.SetHighResolution(value);
+        }
+    }
 
     private readonly Action? _warmUp;
 
@@ -97,7 +108,7 @@ public sealed class AppController
         var anchor = Anchor.Resolve(target, Position);
         if (Reject(_text.PreCheck(target, null), target, anchor)) return;
 
-        _busy = true;
+        Busy = true;
 
         // Start reading the focused element now; the overlay only takes the focus once this is done.
         var probe = _text.ProbeAsync(target!);
@@ -131,7 +142,7 @@ public sealed class AppController
 
         _session = null;
         _overlay.HideOverlay();
-        _busy = false;
+        Busy = false;
         _status.ShowError(Loc.Get("err_unexpected", ex.GetType().Name), session.Anchor);
     }
 
@@ -185,7 +196,7 @@ public sealed class AppController
         var anchor = Anchor.Resolve(target, Position);
         if (Reject(_text.PreCheck(target, null), target, anchor)) return;
 
-        _busy = true;
+        Busy = true;
         var session = new Session(target, _text.ProbeAsync(target!), anchor);
         _ = ExecuteAsync(session, prompt, restoreFocus: false, hotkeyTimestamp);
     }
@@ -215,7 +226,7 @@ public sealed class AppController
         {
             _overlay.HideOverlay();
             _session = null;
-            _busy = false;
+            Busy = false;
             return;
         }
 
@@ -242,7 +253,7 @@ public sealed class AppController
         }
         finally
         {
-            _busy = false;
+            Busy = false;
         }
     }
 
@@ -332,7 +343,7 @@ public sealed class AppController
         finally
         {
             _runCts = null;
-            _busy = false;
+            Busy = false;
         }
     }
 
@@ -363,7 +374,7 @@ public sealed class AppController
             return;
         }
 
-        _busy = true;
+        Busy = true;
         _ = UndoAsync(new Session(target, _text.ProbeAsync(target!), anchor));
     }
 
@@ -427,7 +438,7 @@ public sealed class AppController
         finally
         {
             _runCts = null;
-            _busy = false;
+            Busy = false;
         }
     }
 
