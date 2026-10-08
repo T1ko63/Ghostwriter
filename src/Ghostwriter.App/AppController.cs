@@ -109,6 +109,34 @@ public sealed class AppController
 
     private async Task ShowOverlayAsync(Session session, long hotkeyTimestamp)
     {
+        try
+        {
+            await ShowOverlayCoreAsync(session, hotkeyTimestamp);
+        }
+        catch (Exception ex)
+        {
+            // No prompt can have been chosen yet: the session is published at the end, synchronously with ShowAt.
+            AbortOverlay(session, ex, ownsBusy: _session is null || _session == session);
+        }
+    }
+
+    /// <summary>
+    /// A failure while the overlay opens must not leave the controller busy: then every hotkey would be ignored
+    /// until a restart. Nothing has been read or changed at this point.
+    /// </summary>
+    private void AbortOverlay(Session session, Exception ex, bool ownsBusy)
+    {
+        AppLog.Error("Opening the overlay failed.", ex);
+        if (!ownsBusy) return;
+
+        _session = null;
+        _overlay.HideOverlay();
+        _busy = false;
+        _status.ShowError(Loc.Get("err_unexpected", ex.GetType().Name), session.Anchor);
+    }
+
+    private async Task ShowOverlayCoreAsync(Session session, long hotkeyTimestamp)
+    {
         // Classic Win32 carets are known instantly. Otherwise UIA usually answers within a few milliseconds, which is
         // worth waiting for so the overlay appears at the text cursor instead of at the mouse; if it is slower, the
         // overlay does not wait any longer.
@@ -165,6 +193,19 @@ public sealed class AppController
     // ---- overlay flow ----
 
     private async Task ActivateAfterProbeAsync(Session session)
+    {
+        try
+        {
+            await ActivateAfterProbeCoreAsync(session);
+        }
+        catch (Exception ex)
+        {
+            // Once a prompt was chosen the run owns the busy flag and reports its own errors.
+            AbortOverlay(session, ex, ownsBusy: _session == session);
+        }
+    }
+
+    private async Task ActivateAfterProbeCoreAsync(Session session)
     {
         var probe = await session.Probe;
         if (_session != session || !_overlay.IsShown) return;
