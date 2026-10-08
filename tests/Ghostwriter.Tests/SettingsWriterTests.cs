@@ -87,4 +87,26 @@ public class SettingsWriterTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public void UpdateFile_keeps_utf8_without_bom_and_leaves_no_other_files_behind()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "gw-writer-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, "settings.toml");
+        try
+        {
+            File.WriteAllText(path, "# Größe ändern\r\nautostart = false\r\n");
+            Assert.True(SettingsWriter.UpdateFile(path, "autostart", true));
+
+            var bytes = File.ReadAllBytes(path);
+            Assert.False(bytes is [0xEF, 0xBB, 0xBF, ..]);
+            Assert.Equal("# Größe ändern\r\nautostart = true\r\n", File.ReadAllText(path));
+            Assert.Equal([path], Directory.GetFiles(dir));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
 }

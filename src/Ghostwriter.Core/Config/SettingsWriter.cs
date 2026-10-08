@@ -37,14 +37,34 @@ public static class SettingsWriter
         return string.Join(newline, lines);
     }
 
-    /// <summary>Reads the file, sets the value and writes it back (UTF-8 without BOM). Returns false if nothing had to change.</summary>
+    /// <summary>
+    /// Reads the file, sets the value and writes it back (UTF-8 without BOM). Returns false if nothing had to change.
+    /// The new text goes to a temporary file first and then replaces the original in one step, so a crash or power
+    /// loss while writing can never leave a half-written settings.toml behind.
+    /// </summary>
     public static bool UpdateFile(string path, string key, bool value)
     {
         var text = File.ReadAllText(path);
         var updated = SetBool(text, key, value);
         if (updated == text) return false;
 
-        File.WriteAllText(path, updated, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        var temp = path + ".tmp";
+        try
+        {
+            using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                var bytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false).GetBytes(updated);
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp)) File.Delete(temp);
+        }
+
         return true;
     }
 }
