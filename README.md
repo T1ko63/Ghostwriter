@@ -25,19 +25,6 @@ Simple Config: Clean TOML configuration files
 
 
 
-⚡ Quick Start ⚡
-
-
-Download the latest source/binary
-
-Copy the contents of the config folder to %APPDATA%\Ghostwriter\
-
-Configure API or local AI
-
-Press your hotkey Alt+Shift+G anywhere you type
-
-
-
 📜 Disclaimer & License 📜
 
 This project was built as a personal tool to solve a specific workflow problem. 
