@@ -1,8 +1,6 @@
-👻 Ghostwriter 👻
-
-The lightweight, system-wide
-keyboard-native, AI text processing
-framework for Windows
+# 👻 Ghostwriter 👻
+The lightweight, system-wide,
+keyboard-native, AI text processing framework
 
 
 ✨ Features ✨
