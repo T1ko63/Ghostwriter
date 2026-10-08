@@ -280,4 +280,23 @@ public class SettingsLoaderTests
         Assert.Contains("must be text", warning.Message);
         Assert.Equal(4, warning.Line);
     }
+
+    [Theory]
+    [InlineData("none", true)]
+    [InlineData("NONE", true)]
+    [InlineData("system", true)]
+    [InlineData("#abc", true)]
+    [InlineData("#3B82F6", true)]
+    [InlineData("#803B82F6", true)]
+    [InlineData("#12345", false)]
+    [InlineData("#1234567", false)]
+    [InlineData("#GGGGGG", false)]
+    [InlineData("##fff", false)]
+    [InlineData("3B82F6", false)]
+    [InlineData("rgb(1, 2, 3)", false)]
+    [InlineData("", false)]
+    public void Accent_validation_accepts_exactly_none_system_and_3_6_or_8_digit_hex(string accent, bool valid)
+    {
+        Assert.Equal(valid, SettingsLoader.IsValidAccent(accent));
+    }
 }

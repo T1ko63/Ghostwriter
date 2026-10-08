@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Windows;
 using System.Windows.Media;
 using Ghostwriter.Core.Config;
@@ -129,20 +128,7 @@ public sealed class ThemeService
     private Color? ResolveAccent()
     {
         if (_accent == "system") return ReadSystemAccent();
-        if (_accent.StartsWith('#') && TryParseHex(_accent, out var color)) return color;
-        return null;
-    }
-
-    /// <summary>#RGB, #RRGGBB or #AARRGGBB (the alpha is ignored: the tints bring their own).</summary>
-    internal static bool TryParseHex(string text, out Color color)
-    {
-        color = default;
-        var hex = text.TrimStart('#');
-        if (hex.Length == 3) hex = string.Concat(hex.Select(ch => new string(ch, 2)));
-        if (hex.Length == 8) hex = hex[2..];
-        if (hex.Length != 6 || !int.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var rgb)) return false;
-        color = Color.FromRgb((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
-        return true;
+        return ColorParser.TryParseAccentHex(_accent, out var color) ? Convert(color) : null;
     }
 
     private static bool SystemUsesLightApps()

@@ -50,6 +50,24 @@ public static class ColorParser
         return trimmed.StartsWith('#') ? TryParseHex(trimmed, out color, out hasAlpha) : TryParseFunction(trimmed, out color, out hasAlpha);
     }
 
+    /// <summary>
+    /// The hex forms of the <c>accent</c> setting: <c>#RGB</c>, <c>#RRGGBB</c> or <c>#AARRGGBB</c>. The result is always
+    /// opaque: an alpha part is accepted but ignored, because the accent tints bring their own transparency.
+    /// </summary>
+    public static bool TryParseAccentHex(string text, out Rgba color)
+    {
+        color = default;
+        if (!text.StartsWith('#')) return false;
+        var hex = text[1..];
+        if (hex.Length is not (3 or 6 or 8) || !hex.All(Uri.IsHexDigit)) return false;
+        if (hex.Length == 3) hex = string.Concat(hex.Select(ch => new string(ch, 2)));
+        if (hex.Length == 8) hex = hex[2..];
+
+        var rgb = uint.Parse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        color = Rgba.Opaque((byte)(rgb >> 16), (byte)(rgb >> 8), (byte)rgb);
+        return true;
+    }
+
     private static bool TryParseHex(string text, out Rgba color, out bool hasAlpha)
     {
         color = default;

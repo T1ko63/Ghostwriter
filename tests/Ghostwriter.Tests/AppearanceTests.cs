@@ -77,6 +77,30 @@ public class ColorParserTests
         ColorParser.TryParse("#FF000080", out var color, out _);
         Assert.Equal(new Rgba(0xFF, 0x00, 0x00, 0x80), color);
     }
+
+    // Same results as the accent conversion ThemeService did on its own before it moved here.
+    [Theory]
+    [InlineData("#3B82F6", 0x3B, 0x82, 0xF6)]
+    [InlineData("#3b82f6", 0x3B, 0x82, 0xF6)]
+    [InlineData("#fff", 0xFF, 0xFF, 0xFF)]
+    [InlineData("#a1c", 0xAA, 0x11, 0xCC)]
+    [InlineData("#803B82F6", 0x3B, 0x82, 0xF6)] // alpha ignored
+    public void Accent_hex_is_read_as_an_opaque_colour(string text, int r, int g, int b)
+    {
+        Assert.True(ColorParser.TryParseAccentHex(text, out var color));
+        Assert.Equal(Rgba.Opaque((byte)r, (byte)g, (byte)b), color);
+    }
+
+    [Theory]
+    [InlineData("3B82F6")]
+    [InlineData("#12345")]
+    [InlineData("#GGGGGG")]
+    [InlineData("##fff")]
+    [InlineData("none")]
+    public void Accent_hex_rejects_everything_else(string text)
+    {
+        Assert.False(ColorParser.TryParseAccentHex(text, out _));
+    }
 }
 
 public class AppearanceLoaderTests

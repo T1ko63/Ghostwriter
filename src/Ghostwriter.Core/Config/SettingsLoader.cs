@@ -137,14 +137,11 @@ public static class SettingsLoader
         return new SettingsLoadResult(issues.Any(i => i.IsError) ? null : settings, issues);
     }
 
-    private static readonly System.Text.RegularExpressions.Regex HexColour =
-        new("^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$", System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-
     /// <summary>"none", "system" (case-insensitive) or #RGB / #RRGGBB / #AARRGGBB.</summary>
     public static bool IsValidAccent(string accent)
         => accent.Equals("none", StringComparison.OrdinalIgnoreCase)
            || accent.Equals("system", StringComparison.OrdinalIgnoreCase)
-           || HexColour.IsMatch(accent);
+           || ColorParser.TryParseAccentHex(accent, out _);
 
     private static string ReadHotkey(TomlTable root, TomlReader reader, string key, string fallback)
     {
