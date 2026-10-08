@@ -1,0 +1,88 @@
+# Ghostwriter - example settings.toml
+#
+# Template with every key and its default value. The app does not read this file.
+# To use it, copy it to %APPDATA%\Ghostwriter\settings.toml and edit it.
+# If that file is missing, the app creates one on first start.
+# Changes are applied as soon as the file is saved. If the file has an error, the last working
+# configuration stays active and a message names the file and line.
+# Never put API keys in this template or in the repository.
+
+# Global hotkey that opens the overlay.
+overlay_hotkey = "Ctrl+Shift+Space"
+
+# Undoes the last replacement (press again to go further back).
+undo_hotkey = "Ctrl+Alt+Z"
+# Number of replacements kept in memory, 0-100 (0 = undo off).
+undo_history = 10
+
+# Markers for one-off instructions inside the text, e.g.  <<shorter>> Hello ...
+# Used by prompts with mode = "universal". Must not be empty.
+marker_start = "<<"
+marker_end = ">>"
+
+theme = "system"            # system | light | dark
+accent = "none"             # none | system | hex colour like "#3B82F6" (caret, text selection, progress line)
+overlay_position = "caret"  # caret | mouse | center
+language = "auto"           # auto | de | en
+autostart = false           # start with Windows
+
+# Free unused memory after this many idle seconds (0 = never).
+idle_trim_seconds = 90
+
+# Provider used when a prompt does not name one. Must exist under [providers.*].
+default_provider = "gemini"
+
+
+[appearance]
+transparency = 50           # 0-100 percent: 0 = opaque, 100 = fully transparent
+radius = 10                 # corner radius in px, 0-32
+blur = "acrylic"            # acrylic | blur | mica | micaalt | none
+border = true               # thin border around the window
+
+[appearance.dark]
+background = "#000000"      # #RRGGBB or rgb(r, g, b)
+foreground = "#F0F0F0"      # main text colour
+selection  = "#40FFFFFF"    # selected row: #AARRGGBB (alpha first), #RRGGBB or rgba(r, g, b, a)
+
+[appearance.light]
+background = "#FFFFFF"
+foreground = "#1A1A1A"
+selection  = "#40000000"
+
+
+# One [providers.<name>] block per provider. The name is free and is used by
+# default_provider and by the provider key in prompts.toml.
+#
+#   type               required: openai | gemini | anthropic | openai-compatible
+#   model              required: model name
+#   api_key_env        name of the environment variable that holds the key (recommended)
+#   api_key            key written directly in the file (local only, never commit)
+#   base_url           optional, defaults per type
+#   timeout_seconds    optional, 1-600 (default 30)
+#   reasoning          optional: off | default | low | medium | high (default off)
+#   max_output_tokens  optional, 0 = automatic (default)
+
+[providers.gemini]
+type = "gemini"
+model = "gemini-2.5-flash"
+api_key_env = "GEMINI_API_KEY"
+reasoning = "off"
+
+[providers.anthropic]
+type = "anthropic"
+model = "claude-haiku-4-5"
+api_key_env = "ANTHROPIC_API_KEY"
+reasoning = "off"
+
+[providers.openai]
+type = "openai"
+model = "gpt-5.5"
+api_key_env = "OPENAI_API_KEY"
+reasoning = "off"
+
+# Local models through an OpenAI-compatible server (Ollama, LM Studio). No key needed.
+[providers.local]
+type = "openai-compatible"
+base_url = "http://localhost:11434/v1"
+model = "llama3.2"
+timeout_seconds = 60

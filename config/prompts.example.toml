@@ -1,0 +1,52 @@
+# Ghostwriter - example prompts.toml
+#
+# Template with every key. The app does not read this file.
+# To use it, copy it to %APPDATA%\Ghostwriter\prompts.toml and add your own prompts.
+# If that file is missing, the app creates one with the built-in prompts on first start.
+#
+# One [[prompt]] block per prompt:
+#   name      required: name shown in the overlay, must be unique
+#   prompt    required: the instruction sent to the AI
+#   mode      optional: transform (default) | instruction | universal
+#               transform    edits the selected text, or the whole field
+#               instruction  treats the text in the field as the task
+#               universal    no marker: the text is the task; with a marker: applies it to the rest of the text
+#   hotkey    optional: runs the prompt directly, without the overlay
+#   provider  optional: name of a [providers.*] block in settings.toml
+#   model     optional: overrides the provider's model
+
+[[prompt]]
+name = "Universal"
+mode = "universal"
+hotkey = "Ctrl+Alt+M"
+prompt = """
+You are a writing assistant. Write naturally and match the purpose and tone. Use plain text without Markdown.
+Output only the resulting text, without any introduction or comment.
+"""
+
+[[prompt]]
+name = "Correction"
+mode = "transform"
+hotkey = "Ctrl+Alt+K"
+prompt = """
+Fix spelling, grammar and punctuation. Do not change content or style, and keep the language of the text.
+Output only the resulting text, without any introduction or comment.
+"""
+
+[[prompt]]
+name = "Task"
+mode = "instruction"
+prompt = """
+The text is an instruction. Carry it out and write the finished result in the language of the instruction.
+Output only the resulting text, without any introduction or comment.
+"""
+
+[[prompt]]
+name = "Example"
+mode = "transform"
+provider = "local"
+model = "llama3.2"
+prompt = """
+Your instruction for the AI goes here.
+Output only the resulting text, without any introduction or comment.
+"""

@@ -1,4 +1,4 @@
-# Generates src/InstaPrompt.App/Assets/app.ico (multi-size, PNG-compressed entries).
+# Generates src/Ghostwriter.App/Assets/app.ico (multi-size, PNG-compressed entries).
 # Run: powershell -File tools\make-icon.ps1
 Add-Type -AssemblyName System.Drawing
 
@@ -85,7 +85,7 @@ $images = foreach ($s in $sizes) {
     [pscustomobject]@{ Size = $s; Bytes = $bytes }
 }
 
-$outDir = Join-Path $PSScriptRoot '..\src\InstaPrompt.App\Assets'
+$outDir = Join-Path $PSScriptRoot '..\src\Ghostwriter.App\Assets'
 New-Item -ItemType Directory -Force $outDir | Out-Null
 $path = Join-Path (Resolve-Path $outDir) 'app.ico'
 
