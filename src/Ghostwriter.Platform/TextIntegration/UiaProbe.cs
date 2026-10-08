@@ -61,7 +61,8 @@ internal static class UiaProbe
         if (finished != work)
         {
             AppLog.Warn($"UIA probe timed out after {budget.TotalMilliseconds:F0} ms ({target.ProcessName}).");
-            return null; // the abandoned call is left to finish on its own
+            ObserveAbandoned(work); // the abandoned call is left to finish on its own
+            return null;
         }
 
         return await work;
@@ -142,7 +143,22 @@ internal static class UiaProbe
 
     private static string Normalize(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n').TrimEnd('\n', ' ');
 
+    /// <summary>
+    /// Whether <paramref name="element"/> still has the keyboard focus. Null when UIA cannot tell in time
+    /// (the caller then keeps its previous behaviour instead of guessing).
+    /// </summary>
+    public static Task<bool?> HasFocusAsync(AutomationElement element, TimeSpan budget)
+        => WithBudgetOrUnknown(() => AutomationElement.FocusedElement is { } focused && Automation.Compare(focused, element), budget);
+
+    /// <summary>Whether the element's selection is still <paramref name="expected"/>. Null when UIA cannot tell in time.</summary>
+    public static Task<bool?> SelectionStillAsync(AutomationElement element, string expected, TimeSpan budget)
+        => WithBudgetOrUnknown(() =>
+            element.TryGetCurrentPattern(TextPattern.Pattern, out var pattern) ? SelectionEquals((TextPattern)pattern, expected) : null, budget);
+
     private static async Task<bool> WithBudget(Func<bool> work, TimeSpan budget)
+        => await WithBudgetOrUnknown(() => work(), budget) == true;
+
+    private static async Task<bool?> WithBudgetOrUnknown(Func<bool?> work, TimeSpan budget)
     {
         var task = Task.Run(() =>
         {
@@ -153,12 +169,21 @@ internal static class UiaProbe
             catch (Exception ex) when (ex is ElementNotAvailableException or InvalidOperationException
                 or System.Runtime.InteropServices.COMException or TimeoutException)
             {
-                AppLog.Warn($"UIA selection check failed: {ex.GetType().Name}");
-                return false;
+                AppLog.Warn($"UIA check failed: {ex.GetType().Name}");
+                return null;
             }
         });
-        return await Task.WhenAny(task, Task.Delay(budget)) == task && await task;
+
+        if (await Task.WhenAny(task, Task.Delay(budget)) == task) return await task;
+        ObserveAbandoned(task);
+        return null;
     }
+
+    /// <summary>A call that ran out of budget keeps running; if it fails later, log it instead of leaving an unobserved exception.</summary>
+    private static void ObserveAbandoned(Task task)
+        => task.ContinueWith(
+            t => AppLog.Warn($"Abandoned UIA call failed later: {t.Exception?.GetBaseException().GetType().Name}"),
+            CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
 
     /// <summary>Loads the UIA assemblies and COM server once, in the background, so the first hotkey is not slow.</summary>
     public static void Warmup() => Task.Run(() =>

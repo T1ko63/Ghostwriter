@@ -57,6 +57,12 @@ public sealed record TextCapture(
 {
     /// <summary>Set when the text was read through UIA; lets the replace step re-select and verify the field.</summary>
     internal System.Windows.Automation.AutomationElement? Element { get; init; }
+
+    /// <summary>
+    /// The element that had the focus at hotkey time. In browsers, Electron, WPF or WinUI every field lives in the
+    /// same window handle, so only UIA can tell whether the focus moved to another field before pasting.
+    /// </summary>
+    internal System.Windows.Automation.AutomationElement? FocusElement { get; init; }
 }
 
 public sealed record CaptureResult(TextCapture? Capture, CaptureFailure Failure, string? Detail = null)

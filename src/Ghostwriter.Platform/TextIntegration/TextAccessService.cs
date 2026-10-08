@@ -77,7 +77,11 @@ public sealed class TextAccessService : ITextAccess
             if (!string.IsNullOrEmpty(uia?.SelectedText))
             {
                 return CaptureResult.Ok(new TextCapture(
-                    uia.SelectedText, TextOrigin.Selection, ReadStrategy.Uia, target, stopwatch.Elapsed));
+                    uia.SelectedText, TextOrigin.Selection, ReadStrategy.Uia, target, stopwatch.Elapsed)
+                {
+                    Element = uia.Element, // lets the replace step check that the selection is still there
+                    FocusElement = uia?.Element,
+                });
             }
 
             // UIA says "caret, no selection" in a field it can prove to be editable: trust that negative and read
@@ -93,6 +97,7 @@ public sealed class TextAccessService : ITextAccess
                         uia.WholeText, TextOrigin.WholeField, ReadStrategy.Uia, target, stopwatch.Elapsed)
                     {
                         Element = uia.Element,
+                        FocusElement = uia.Element,
                     });
             }
         }
@@ -105,11 +110,11 @@ public sealed class TextAccessService : ITextAccess
         // without selection would copy just the current line in VS Code. Select all first, then copy.
         var selectAllFirst = canSelectAll
             && uia is { IsWebEngine: true, IsEditable: true, SelectionKnown: true, SelectedText.Length: 0 };
-        return await CaptureViaClipboardAsync(target, canSelectAll, selectAllFirst, stopwatch, ct);
+        return await CaptureViaClipboardAsync(target, uia, canSelectAll, selectAllFirst, stopwatch, ct);
     }
 
     private async Task<CaptureResult> CaptureViaClipboardAsync(
-        TargetInfo target, bool canSelectAll, bool selectAllFirst, Stopwatch stopwatch, CancellationToken ct)
+        TargetInfo target, UiaFocusInfo? uia, bool canSelectAll, bool selectAllFirst, Stopwatch stopwatch, CancellationToken ct)
     {
         if (!_clipboard.TrySnapshot(out var snapshot)) return CaptureResult.Fail(CaptureFailure.ClipboardBusy);
         var clipboardStart = Stopwatch.GetTimestamp();
@@ -144,7 +149,10 @@ public sealed class TextAccessService : ITextAccess
 
             return string.IsNullOrEmpty(text)
                 ? CaptureResult.Fail(CaptureFailure.NoText)
-                : CaptureResult.Ok(new TextCapture(text, origin, ReadStrategy.Clipboard, target, stopwatch.Elapsed));
+                : CaptureResult.Ok(new TextCapture(text, origin, ReadStrategy.Clipboard, target, stopwatch.Elapsed)
+                {
+                    FocusElement = uia?.Element,
+                });
         }
         finally
         {
@@ -205,13 +213,53 @@ public sealed class TextAccessService : ITextAccess
         return InputSimulator.CtrlChord(InputSimulator.VK_A) ? ReplaceFailure.None : ReplaceFailure.InputBlocked;
     }
 
+    private static readonly TimeSpan FieldCheckBudget = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>
+    /// True only when a check proves that the focus or the selection moved since the text was read. A check that
+    /// cannot tell (no UIA, too slow) does not block: then the behaviour is the same as without the check.
+    /// </summary>
+    private static async Task<bool> FieldChangedAsync(TextCapture capture)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var focusWindow = FocusWindowMatches(capture.Target);
+        bool? focusElement = null, selection = null;
+        if (focusWindow != false && capture.FocusElement is { } focused)
+        {
+            focusElement = await UiaProbe.HasFocusAsync(focused, FieldCheckBudget);
+        }
+
+        // A replaced selection must still be selected, or the result would land at the caret or over something else.
+        if (focusWindow != false && focusElement != false && capture.Origin == TextOrigin.Selection && capture.Element is { } element)
+        {
+            selection = await UiaProbe.SelectionStillAsync(element, capture.Text, FieldCheckBudget);
+        }
+
+        var changed = focusWindow == false || focusElement == false || selection == false;
+        AppLog.Info($"field check [{capture.Target.ProcessName}]: focusWindow={Show(focusWindow)}, focusElement={Show(focusElement)}, "
+            + $"selection={Show(selection)} -> {(changed ? "changed" : "ok")} ({Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms)");
+        return changed;
+
+        static string Show(bool? value) => value switch { true => "same", false => "moved", null => "-" };
+    }
+
+    /// <summary>Whether the focused child window is still the one from hotkey time; null when that cannot be told.</summary>
+    private static bool? FocusWindowMatches(TargetInfo target)
+    {
+        if (target.FocusWindow == 0) return null;
+        var info = new GUITHREADINFO { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<GUITHREADINFO>() };
+        if (!GetGUIThreadInfo(target.ThreadId, ref info) || info.hwndFocus == 0) return null;
+        return info.hwndFocus == target.FocusWindow;
+    }
+
     public async Task<ReplaceResult> ReplaceAsync(TextCapture capture, string newText, CancellationToken ct = default)
     {
         var stopwatch = Stopwatch.StartNew();
         var target = capture.Target;
 
-        // The AI call can take seconds. Never paste into a different window than the one the text came from.
-        if (GetForegroundWindow() != target.Window)
+        // The AI call can take seconds. Never paste into a different window, or a different field of the same
+        // window, than the one the text came from: with a whole-field capture Ctrl+A would wipe that other field.
+        if (GetForegroundWindow() != target.Window || await FieldChangedAsync(capture))
         {
             return new ReplaceResult(ReplaceFailure.TargetChanged, stopwatch.Elapsed);
         }
