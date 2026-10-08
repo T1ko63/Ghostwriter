@@ -180,3 +180,128 @@ Erwartete Größenänderung: gering (geschätzt −80 bis −120 Zeilen Totcode,
 - **Große Zwischenablage-Inhalte (S8):** Bei sehr großen Kopien den Lauf vorher ablehnen statt teilweise wiederherzustellen. Neue Meldung, neues Verhalten.
 - **Abbruch per Esc während der KI-Anfrage:** Heute bricht Esc nur das Overlay ab; ein laufender Auftrag wird per Klick auf die Statuspille abgebrochen. Esc global abzufangen wäre ein neues Feature.
 - **Größerer Umbau von `App.xaml.cs`/`AppController`** in kleinere Klassen: kein akuter Nutzen, nur bei künftigen Features.
+
+---
+
+## Phase 2: Umsetzung (freigegeben am 2026-10-08)
+
+Freigegeben wurden alle drei sichtbaren Änderungen (S1/S6 Abbruch bei Fokuswechsel, S2 ehrlichere Meldung, S7 richtige
+Meldung bei belegter Zwischenablage). Jeder Schritt ist ein eigener Commit; nach jedem Commit waren Build (0 Warnungen)
+und alle Tests grün.
+
+| Commit | Befund | Inhalt |
+|---|---|---|
+| `5af2dc5` | S3 | Ausnahmen in der Fensterprozedur (Hotkeys, Tray-Menü) werden abgefangen, geloggt und als Hinweis angezeigt, statt die App zu beenden. |
+| `a48ad04` | S4 | Fehler beim Öffnen oder Aktivieren des Overlays schließen es und setzen den Busy-Zustand zurück. |
+| `c682d73` | S1, S6, S10 | Vor dem Einfügen müssen fokussiertes Child-Fenster (Win32) und fokussiertes UIA-Element dieselben sein wie beim Hotkey; eine per UIA gelesene Auswahl muss noch markiert sein. Bewiesene Abweichung führt zum Abbruch mit „Das Fenster hat gewechselt…“. Kann eine Prüfung nicht rechtzeitig antworten (150 ms), gilt das alte Verhalten. Abgebrochene UIA-Aufrufe werden beobachtet. |
+| `2dcc9e3` | S2, S7 | Ein Abbruch zählt nur bis zum Strg+V; danach wird die Bestätigung abgewartet. Neue Meldung „…nicht bestätigt. Bitte den Text prüfen (Strg+Z…)“. Eine beim Lesen belegte Zwischenablage heißt jetzt „Die Zwischenablage ist gerade belegt“. |
+| `bd49891` | S5 | `settings.toml` wird über eine temporäre Datei atomar ersetzt (Charakterisierungstest vorab). |
+| `a518d1c` | S9 | Keine leeren `catch`-Blöcke mehr (Migration, Debouncer); `AppLog.Init` wirft nie. |
+| `1a6a3db` | S12, S13 | Warm-up wirft nie; der Reasoning-Cache berücksichtigt Typ und Base-URL. |
+| `80f8bb8` | S14 | `api_key = 123` meldet „api_key must be text“ (weiterhin nur Warnung; Test vorab). |
+| `949ab4d` | P1, P2 | Kein UIA-Elementname mehr im Log; der Detailtext abgelehnter Anfragen (400) wird angezeigt, aber nicht geloggt. |
+| `c0cb637` | E1–E6 | Totcode entfernt (Liste im Commit-Text, per Volltextsuche inkl. XAML belegt). |
+| `3a024ee` | E8–E11 | `BaseUrl`-Eigenschaft statt 5× `TrimEnd`, Core-csproj bereinigt, leerer `if`-Zweig entfernt, `coverlet.collector` entfernt. |
+| `19f7110` | E7 | Ein Parser für Akzentfarben (`ColorParser.TryParseAccentHex`), Charakterisierungstests vorab. |
+| `067b888` | D1 | 1-ms-Timerauflösung nur noch, solange Overlay oder Lauf aktiv sind. |
+| `cdb188c` | D2, D4 | Idle-Trim als einmaliger Timer statt 2-s-Takt; Provider-Registry beim Start nur einmal erzeugt. |
+| `ba40e73` | F1 | `TreatWarningsAsErrors` + `AnalysisLevel=latest-minimum`; 13 Fundstellen ohne Verhaltensänderung behoben. |
+
+Tests: 350 → **375** (neu: atomares Schreiben und Encoding, `api_key`-Typ, Akzent-Validierung und -Umrechnung).
+
+Abweichungen vom Plan:
+- **E10 teilweise:** Die „unerreichbare“ Null-Prüfung in `TextAccessService.CaptureAsync` bleibt, weil der Compiler sie
+  für die Nullable-Analyse braucht. Nur der leere `if`-Zweig wurde entfernt.
+- **F3 (Tests für Platform/App) nicht umgesetzt:** `ClipboardService` und `TextAccessService` rufen Win32 direkt auf.
+  Sie testbar zu machen hieße, Zwischenablage und Tastatureingabe hinter neue Interfaces zu legen. Das wäre mehr Code und
+  ein größerer Umbau genau im empfindlichsten Teil. Die Zwischenablage-Wiederherstellung ist weiterhin per `try/finally`
+  in jedem Pfad abgesichert; die neuen Prüfungen schreiben jede Entscheidung ins Log („field check …“).
+- **Größe:** Statt der geschätzten Netto-Verkleinerung ist der Produktivcode um gut 200 Zeilen gewachsen. Entfernt wurden
+  rund 90 Zeilen Totcode; hinzu kamen die neuen Schutzprüfungen (S1/S6, S3, S4, S5) mit ihren Kommentaren.
+
+## Phase 3: Verifikation
+
+- `dotnet build -c Release --no-incremental`: **0 Warnungen, 0 Fehler**, jetzt mit `TreatWarningsAsErrors` und Analyzern.
+- `dotnet test`: **375/375 grün**.
+- Startzeit: beide Publish-Builds (ReadyToRun) abwechselnd je 6× mit derselben isolierten Test-Config gestartet:
+
+| | Baseline | Nachher |
+|---|---|---|
+| „Ready after“ (Median) | 377 ms (363–387) | 375 ms (364–402) |
+| Prozessstart bis „Ready“ (Median) | 548 ms | 542 ms |
+| Working Set 1,5 s nach dem Start | 146–147 MB | 146 MB |
+
+  Der Unterschied liegt im Rauschen.
+- **Hotkey → Overlay und Hotkey → Request:** Das konnte ich nicht selbst messen, ohne Tastendrücke in deine laufende
+  Sitzung zu schicken. Im heißen Pfad kommt nur ein `timeBeginPeriod`-Aufruf hinzu (Mikrosekunden). Neu ist die
+  Feldprüfung *nach* der KI-Antwort und *vor* dem Einfügen (UIA, Budget 150 ms, typisch wenige ms); ihre Dauer steht als
+  `field check [...] (N ms)` im Log. Bitte nach dem manuellen Test die Zeilen `first frame after`, `request sent` und
+  `field check` mit der Baseline oben vergleichen.
+
+### Manuelle Testcheckliste
+
+In **Notepad**, einem **Browser** (Textfeld auf einer Webseite), **Word** und einer **Chat-App** jeweils:
+
+1. **Auswahl:** Text markieren, Prompt-Hotkey (z. B. Strg+Alt+K): nur die Auswahl wird ersetzt.
+2. **Ohne Auswahl:** Cursor ins Feld, nichts markiert, Overlay-Hotkey, Prompt wählen: das ganze Feld wird ersetzt.
+3. **Marker:** `<<kürzer>> Langer Text …` mit dem Universal-Prompt: Marker verschwindet, Text gekürzt.
+   Unvollständig `<<kürzer Text`: Meldung „Marker << ohne schließendes >>“, nichts geändert.
+4. **Auftragsmodus:** `Absage an Freunde fürs Wochenende` mit Universal oder „Auftrag“: fertige Nachricht.
+5. **Fehlerfall ohne Netzwerk:** WLAN aus, Prompt ausführen: „Keine Verbindung. Der Text blieb unverändert.“; Text und Zwischenablage unverändert.
+6. **Abbruch mit Esc:** Overlay öffnen, Esc: Overlay zu, Fokus zurück im Feld. Während der KI-Anfrage Klick auf die Statuspille: Abbruch, Text unverändert.
+7. **Neu, Fokuswechsel:** Prompt starten und während der Anfrage in ein *anderes* Feld desselben Fensters klicken (Browser: anderes Eingabefeld; Word: Kopfzeile oder Suchfeld): Meldung „Das Fenster hat gewechselt…“, beide Felder unverändert. **Gegenprobe:** im selben Feld bleiben, die Ersetzung läuft wie gewohnt. Das ist wichtig, um falsche Abbrüche auszuschließen.
+8. **Neu, Auswahl geändert:** Text markieren, Prompt starten, während der Anfrage woanders ins selbe Feld klicken: Abbruch statt Einfügen am Cursor.
+9. **Config-Reload mit Syntaxfehler:** in `settings.toml` eine Zeile kaputt machen und speichern: Meldung mit Datei und Zeile, alte Config bleibt aktiv; Fehler beheben, Config wird wieder geladen.
+10. **Zwischenablage:** vorher ein Bild oder formatierten Text kopieren: nach jeder Ersetzung ist er unverändert in der Zwischenablage.
+11. **Tray:** „Mit Windows starten“ umschalten: Häkchen und `settings.toml` stimmen überein. „Config-Ordner öffnen“ funktioniert.
+
+---
+
+## Abschlussbericht
+
+### 1. Vorher/Nachher
+| | Vorher | Nachher |
+|---|---:|---:|
+| Produktivcode (Zeilen / nicht leer) | 7 462 / 6 387 | 7 667 / 6 570 |
+| Testcode (Zeilen) | 2 865 | 2 943 |
+| Dateien (.cs/.xaml) Produktiv / Tests | 62 / 12 | 62 / 12 |
+| Projekte | 4 | 4 |
+| NuGet Produktiv / Tests | 1 / 4 | 1 / 3 |
+| Tests | 350 | 375 |
+| Build-Warnungen | 0 (ohne Analyzer) | 0 (mit Analyzern, Warnungen = Fehler) |
+| Publish (framework-dependent, R2R) | 2 151 370 B | 2 171 850 B (+0,95 %) |
+| Start „Ready“ (Median) | 377 ms | 375 ms |
+| Hotkey → Overlay / → Request | 7–10 ms / 5–27 ms | siehe Phase 3 (bitte aus dem Log ablesen) |
+
+### 2. Was behoben wurde
+Siehe Tabelle „Phase 2“: Stabilität (S1–S7, S9, S10, S12–S14), Datenschutz (P1, P2), Totcode und Vereinfachung (E1–E11),
+Performance (D1, D2, D4), Warnungs-Hygiene (F1).
+
+### 3. Bewusst nicht angefasst
+- **S8** (Zwischenablage-Snapshot ohne Gesamtgrenze): eine Grenze würde beim Zurücksetzen Inhalte verlieren.
+- **S11** (kurze Sleeps beim Config-Lesen auf dem UI-Thread): höchstens 160 ms und nur beim Speichern im Editor; der Umbau lohnt nicht.
+- **D3** (Startpfad): die rund 300 ms für Fenster und Warm-up sind der Preis für ein Overlay in 7–10 ms.
+- **A2/A3** (`App.xaml.cs`/`AppController` aufteilen): kein Stabilitätsgewinn, nur Diff.
+- **F3** (Tests für Platform/App): siehe oben.
+- **Analyzer-Stufe „recommended“**: brächte vor allem Stilregeln (480× Unterstriche in Testnamen) und Kultur-Hinweise ohne praktische Wirkung.
+- Provider-Adapter nicht weiter zusammengelegt: die Gemeinsamkeiten liegen schon in `LlmProvider`.
+
+### 4. Restrisiken und Empfehlungen für später
+- Die Feldprüfung (S1/S6) verlässt sich auf UIA-Laufzeit-IDs. Liefert eine App für dasselbe Feld nach der Fokus-Rückkehr
+  ein anderes Element, gibt es einen **falschen Abbruch** (Meldung, kein Datenverlust). Punkt 7 der Checkliste (Gegenprobe)
+  deckt das ab; die Log-Zeile `field check` zeigt, welche Prüfung angeschlagen hat.
+- In Apps ohne UIA und mit nur einem Fensterhandle (manche Java-, Qt- oder Spiele-Oberflächen) kann ein Fokuswechsel
+  innerhalb des Fensters weiterhin nicht erkannt werden.
+- Eine *späte* Paste nach 2 s ohne Bestätigung bleibt möglich (S2); die Meldung weist jetzt darauf hin.
+- Zwischenablageverlauf (P3), große Zwischenablage (S8), Esc während der Anfrage und ein größerer Umbau: wie unter
+  „Empfehlungen für später“ in Phase 1.
+
+### 5. Was sich für dich spürbar anders verhalten kann
+- Klickst du während einer Anfrage in ein anderes Feld (oder hebst die Markierung auf), wird **nicht mehr eingefügt**;
+  stattdessen erscheint „Das Fenster hat gewechselt, der Text wurde nicht ersetzt.“
+- Neue Texte: „Die Ziel-App hat das Einfügen nicht bestätigt. Bitte den Text prüfen (Strg+Z macht es rückgängig).“ und bei
+  gesperrter Zwischenablage „Die Zwischenablage ist gerade belegt.“
+- Ein Klick auf die Statuspille *nach* dem Einfügen-Befehl bricht nicht mehr ab (vorher konnte er die Zwischenablage zu
+  früh zurücksetzen).
+- Fehler aus Tray-Menü oder Hotkey beenden die App nicht mehr, sondern zeigen „Unerwarteter Fehler: …“.
+- Sonst nichts: Hotkeys, Prompt-Modi, Marker-Syntax, TOML-Formate und Abläufe sind unverändert.
