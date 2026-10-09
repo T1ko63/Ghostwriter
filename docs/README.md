@@ -97,6 +97,12 @@ mit Kommentaren: `settings.toml` und `prompts.toml`. Änderungen werden nach dem
 übernommen, auch die Hotkeys. Bei einem Fehler in einer Datei bleibt die letzte funktionierende Version aktiv, und
 eine Meldung nennt Datei und Zeile.
 
+Kuroko hieß früher Ghostwriter und davor InstaPrompt. Beim ersten Start wandern `%APPDATA%\Ghostwriter\` und, falls noch
+vorhanden, `%APPDATA%\InstaPrompt\` nach `%APPDATA%\Kuroko\`. Dabei wird nichts überschrieben: Was im neuen Ordner schon
+liegt, bleibt, die alte Kopie bleibt dann im alten Ordner; ein leerer alter Ordner wird entfernt. Läuft die alte Version
+noch, bittet Kuroko darum, sie zu beenden, und startet nicht. Alte Autostart-Einträge („Ghostwriter (Claude)“,
+„InstaPrompt (Claude)“) entfernt Kuroko bei jedem Start. Umgebungsvariablen heißen jetzt `KUROKO_*` statt `GHOSTWRITER_*`.
+
 Vollständige Vorlagen mit allen Schlüsseln, Standardwerten und kurzen Kommentaren liegen im Repository unter
 [`config/settings.example.toml`](config/settings.example.toml) und [`config/prompts.example.toml`](config/prompts.example.toml).
 Zum Verwenden nach `%APPDATA%\Kuroko\` kopieren und `.example` aus dem Namen entfernen. Die Vorlagen enthalten keine
