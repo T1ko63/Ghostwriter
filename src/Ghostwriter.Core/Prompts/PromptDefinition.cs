@@ -15,6 +15,16 @@ public enum PromptMode
     Universal,
 }
 
+/// <summary>Where the result of a prompt goes. Independent of <see cref="PromptMode"/>, which only describes the input.</summary>
+public enum PromptOutput
+{
+    /// <summary>The result replaces the selected text (or the whole field) in the target app.</summary>
+    Replace,
+
+    /// <summary>The result is shown in a small card; the text in the target app is not touched.</summary>
+    Overlay,
+}
+
 /// <summary>One saved prompt. Mirrors an entry of prompts.toml.</summary>
 public sealed record PromptDefinition(
     string Name,
@@ -22,4 +32,5 @@ public sealed record PromptDefinition(
     PromptMode Mode = PromptMode.Transform,
     string? Hotkey = null,
     string? Provider = null,
-    string? Model = null);
+    string? Model = null,
+    PromptOutput Output = PromptOutput.Replace);

@@ -8,7 +8,7 @@ namespace Ghostwriter.Core.Config;
 /// </summary>
 internal static class AppearanceLoader
 {
-    private static readonly HashSet<string> Keys = new(StringComparer.Ordinal) { "transparency", "radius", "blur", "border", "dark", "light" };
+    private static readonly HashSet<string> Keys = new(StringComparer.Ordinal) { "transparency", "radius", "blur", "border", "custom_corners", "dark", "light" };
     private static readonly HashSet<string> ColorKeys = new(StringComparer.Ordinal) { "background", "foreground", "selection" };
 
     public static AppearanceSettings Read(TomlTable root, TomlReader reader)
@@ -25,16 +25,17 @@ internal static class AppearanceLoader
 
         foreach (var key in table.Keys.Where(k => !Keys.Contains(k)))
         {
-            Warn(reader, Line(key), $"[appearance] unknown setting '{key}'");
+            Warn(reader, Line(key), $"[appearance] unknown setting '{key}'{SettingsLoader.MisplacedHint(key)}");
         }
 
         var transparency = ReadInt(table, "transparency", AppearanceSettings.DefaultTransparency, 0, 100, reader, Line);
         var radius = ReadInt(table, "radius", AppearanceSettings.DefaultRadius, 0, AppearanceSettings.MaxRadius, reader, Line);
         var blur = ReadBlur(table, reader, Line);
         var border = ReadBool(table, "border", AppearanceSettings.DefaultBorder, reader, Line);
+        var customCorners = ReadBool(table, "custom_corners", AppearanceSettings.DefaultCustomCorners, reader, Line);
         var dark = ReadColors("dark", table, AppearanceSettings.DefaultDark, reader);
         var light = ReadColors("light", table, AppearanceSettings.DefaultLight, reader);
-        return new AppearanceSettings(transparency, radius, blur, dark, light, border);
+        return new AppearanceSettings(transparency, radius, blur, dark, light, border, customCorners);
     }
 
     private static void Warn(TomlReader reader, int? line, string message) => reader.Issue(line, message, isError: false, show: true);
@@ -98,7 +99,7 @@ internal static class AppearanceLoader
 
         foreach (var key in table.Keys.Where(k => !ColorKeys.Contains(k)))
         {
-            Warn(reader, Line(key), $"{header} unknown setting '{key}'");
+            Warn(reader, Line(key), $"{header} unknown setting '{key}'{SettingsLoader.MisplacedHint(key)}");
         }
 
         var background = ReadColor(table, "background", defaults.Background, alphaAllowed: false, header, reader, Line);

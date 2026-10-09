@@ -20,9 +20,11 @@ public static class PromptsLoader
 
     private static readonly string[] Modes = ["transform", "instruction", "universal"];
 
+    private static readonly string[] Outputs = ["replace", "overlay"];
+
     private static readonly HashSet<string> PromptKeys = new(StringComparer.Ordinal)
     {
-        "name", "prompt", "mode", "hotkey", "provider", "model",
+        "name", "prompt", "mode", "output", "hotkey", "provider", "model",
     };
 
     public static PromptsLoadResult Parse(string toml)
@@ -42,6 +44,7 @@ public static class PromptsLoader
         }
 
         var reader = new TomlReader(FileName, toml, issues);
+        reader.WarnAboutDuplicateKeys();
 
         foreach (var key in root.Keys.Where(k => k != "prompt"))
         {
@@ -120,6 +123,8 @@ public static class PromptsLoader
             _ => PromptMode.Transform,
         };
 
+        var output = reader.Choice(table, "output", "replace", Outputs, Line) == "overlay" ? PromptOutput.Overlay : PromptOutput.Replace;
+
         var hotkey = reader.Choice(table, "hotkey", string.Empty, null, Line).Trim();
         if (hotkey.Length > 0 && !HotkeyGesture.TryParse(hotkey, out _, out var hotkeyError))
         {
@@ -136,6 +141,7 @@ public static class PromptsLoader
             mode,
             hotkey.Length == 0 ? null : hotkey,
             provider.Length == 0 ? null : provider,
-            model.Length == 0 ? null : model);
+            model.Length == 0 ? null : model,
+            output);
     }
 }

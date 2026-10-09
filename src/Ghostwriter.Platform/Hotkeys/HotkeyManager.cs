@@ -19,6 +19,10 @@ public sealed class HotkeyManager : IDisposable
 
     private readonly MessageWindow _window;
     private readonly Dictionary<int, Action<long>> _callbacks = new();
+
+    // Registered only for a short while by their owner (e.g. Esc while the result card is visible) and released by it
+    // with Unregister. UnregisterAll, used when the configuration is reloaded, leaves these alone.
+    private readonly HashSet<int> _temporary = new();
     private int _nextId = 1;
 
     public HotkeyManager(MessageWindow window)
@@ -31,7 +35,11 @@ public sealed class HotkeyManager : IDisposable
     /// Registers a gesture. The callback receives the <see cref="Stopwatch.GetTimestamp"/> value taken
     /// when the hotkey message arrived, so latency can be measured from that point.
     /// </summary>
-    public HotkeyRegistration Register(HotkeyGesture gesture, Action<long> callback)
+    /// <param name="temporary">
+    /// For a hotkey that exists only while something is on screen: it survives <see cref="UnregisterAll"/> and must be
+    /// released with <see cref="Unregister"/>. Unlike the configured hotkeys it may be a bare key such as Esc.
+    /// </param>
+    public HotkeyRegistration Register(HotkeyGesture gesture, Action<long> callback, bool temporary = false)
     {
         var id = _nextId++;
         if (!RegisterHotKey(_window.Handle, id, (uint)gesture.Modifiers | MOD_NOREPEAT, (uint)gesture.VirtualKey))
@@ -43,13 +51,22 @@ public sealed class HotkeyManager : IDisposable
         }
 
         _callbacks[id] = callback;
+        if (temporary) _temporary.Add(id);
         return HotkeyRegistration.Ok(id);
     }
 
+    /// <summary>Releases one hotkey (also after <see cref="HotkeyRegistration.Success"/> of a temporary one). Unknown ids are ignored.</summary>
+    public void Unregister(int id)
+    {
+        if (!_callbacks.Remove(id)) return;
+        _temporary.Remove(id);
+        UnregisterHotKey(_window.Handle, id);
+    }
+
+    /// <summary>Releases all configured hotkeys (not the temporary ones, see <see cref="Register"/>).</summary>
     public void UnregisterAll()
     {
-        foreach (var id in _callbacks.Keys) UnregisterHotKey(_window.Handle, id);
-        _callbacks.Clear();
+        foreach (var id in _callbacks.Keys.Where(id => !_temporary.Contains(id)).ToList()) Unregister(id);
     }
 
     private bool OnMessage(uint msg, nint wParam, nint lParam, out nint result)
@@ -61,5 +78,8 @@ public sealed class HotkeyManager : IDisposable
         return true;
     }
 
-    public void Dispose() => UnregisterAll();
+    public void Dispose()
+    {
+        foreach (var id in _callbacks.Keys.ToList()) Unregister(id);
+    }
 }

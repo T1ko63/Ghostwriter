@@ -29,6 +29,14 @@
     <Thickness x:Key="Status.LineMargin">18,0,18,11</Thickness>
     <sys:Double x:Key="Status.LineHeight">2</sys:Double>
 
+    <!-- Result card (overlay output): the status window grown to a text card -->
+    <sys:Double x:Key="Result.Width">480</sys:Double>             <!-- fixed width of the card (never wider than the monitor) -->
+    <sys:Double x:Key="Result.MaxHeight">360</sys:Double>         <!-- grows with the text up to this height, then scrolls -->
+    <Thickness x:Key="Result.Padding">18,14,18,22</Thickness>     <!-- bottom leaves room for the progress line -->
+    <sys:Double x:Key="Result.LineGap">4</sys:Double>             <!-- between two lines of text -->
+    <sys:Double x:Key="Result.ParagraphGap">8</sys:Double>        <!-- height of an empty line -->
+    <sys:Double x:Key="Result.BulletIndent">16</sys:Double>       <!-- width of the bullet column; wrapped lines hang behind it -->
+
     <!-- ===== Typography ===== -->
     <FontFamily x:Key="Font.Family">Segoe UI Variable Text, Segoe UI</FontFamily>
     <sys:Double x:Key="Font.Search">16</sys:Double>
@@ -36,7 +44,7 @@
     <sys:Double x:Key="Font.Hotkey">12</sys:Double>
     <sys:Double x:Key="Font.Number">11.5</sys:Double>
     <sys:Double x:Key="Font.Status">13</sys:Double>
-
+    <sys:Double x:Key="Font.Result">15</sys:Double>   <!-- default; the real value comes from settings.toml (result_font_size) -->
     <!-- ===== Colours =====
          Surface, text, separator, row highlight, scrollbar and so on are not defined here: they come from the [appearance]
          block of settings.toml (background, foreground, selection) and are published by ThemeService. Only the error
@@ -51,7 +59,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ListBoxItem">
-                    <Border x:Name="Row" Height="{StaticResource Row.Height}" Margin="{StaticResource Row.Margin}"
+                    <Border x:Name="Row" Height="{DynamicResource Row.Height}" Margin="{StaticResource Row.Margin}"
                             Padding="{StaticResource Row.Padding}" CornerRadius="{DynamicResource Row.Radius}" Background="Transparent">
                         <ContentPresenter VerticalAlignment="Center"/>
                     </Border>
@@ -110,6 +118,27 @@
                             <Thumb Style="{StaticResource ThinThumb}"/>
                         </Track.Thumb>
                     </Track>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- The result card's scroller: same thin scrollbar, laid over the text and shown only while there is something to scroll. -->
+    <Style x:Key="ResultScroller" TargetType="ScrollViewer">
+        <Setter Property="Focusable" Value="False"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollViewer">
+                    <Grid Background="Transparent">
+                        <ScrollContentPresenter x:Name="PART_ScrollContentPresenter" CanContentScroll="{TemplateBinding CanContentScroll}"/>
+                        <ScrollBar x:Name="PART_VerticalScrollBar" Style="{StaticResource ThinScrollBar}"
+                                   HorizontalAlignment="Right" Margin="0,4,2,4"
+                                   Orientation="Vertical" Minimum="0"
+                                   Maximum="{TemplateBinding ScrollableHeight}"
+                                   ViewportSize="{TemplateBinding ViewportHeight}"
+                                   Value="{Binding VerticalOffset, Mode=OneWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                   Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"/>
+                    </Grid>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

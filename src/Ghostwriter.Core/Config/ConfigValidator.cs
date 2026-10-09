@@ -29,7 +29,7 @@ public static class ConfigValidator
             }
         }
 
-        // Every hotkey may be used once: the overlay hotkey and the prompt hotkeys share one namespace.
+        // Every hotkey may be used once: the overlay, undo and result-copy hotkeys and the prompt hotkeys share one namespace.
         var owners = new Dictionary<HotkeyGesture, string>();
         void Claim(string hotkey, string owner, string file, int? line)
         {
@@ -44,6 +44,8 @@ public static class ConfigValidator
         }
 
         Claim(settings.OverlayHotkey, "overlay_hotkey", SettingsLoader.FileName, null);
+        if (settings.UndoHistory > 0) Claim(settings.UndoHotkey, "undo_hotkey", SettingsLoader.FileName, null);
+        Claim(settings.ResultCopyHotkey, "result_copy_hotkey", SettingsLoader.FileName, null);
         foreach (var prompt in prompts.Where(p => p.Hotkey is not null))
         {
             Claim(prompt.Hotkey!, $"prompt '{prompt.Name}'", PromptsLoader.FileName, LineOf(prompt.Name));

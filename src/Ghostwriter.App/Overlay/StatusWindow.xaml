@@ -12,9 +12,16 @@
     <Border x:Name="Panel" Background="{DynamicResource SurfaceBrush}">
         <Grid x:Name="Root">
             <TextBlock x:Name="Message" Margin="{StaticResource Status.Padding}" TextWrapping="Wrap"/>
+            <!-- Result card: replaces the message with the first piece of the answer (see StatusWindow.BeginResult). -->
+            <ScrollViewer x:Name="ResultScroll" Style="{StaticResource ResultScroller}" Visibility="Collapsed"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False"
+                          PreviewMouseWheel="OnResultWheel" ScrollChanged="OnResultScrolled">
+                <StackPanel x:Name="ResultLines" Margin="{StaticResource Result.Padding}"/>
+            </ScrollViewer>
             <!-- The progress line: a thin track with a chunk that runs across it while the AI works. -->
             <Grid x:Name="Line" Height="{StaticResource Status.LineHeight}" Margin="{StaticResource Status.LineMargin}"
-                  VerticalAlignment="Bottom" ClipToBounds="True" Background="{DynamicResource SeparatorBrush}">
+                  VerticalAlignment="Bottom" ClipToBounds="True" Background="{DynamicResource SeparatorBrush}"
+                  IsHitTestVisible="False">
                 <Border x:Name="Chunk" HorizontalAlignment="Left" Background="{DynamicResource ProgressBrush}">
                     <Border.RenderTransform>
                         <TranslateTransform x:Name="ChunkShift"/>

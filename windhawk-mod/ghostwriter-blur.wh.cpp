@@ -1,18 +1,33 @@
 // ==WindhawkMod==
 // @id              ghostwriter-blur
 // @name            Ghostwriter Blur
-// @description     WindhawkBlur-style blur (adjustable strength, tint, noise, any corner radius) behind the Ghostwriter overlay
-// @version         0.1.0
+// @description     Blur (WindhawkBlur-style) and freely rounded corners (any radius, also on Acrylic/Mica) for the Ghostwriter overlay, each with its own switch
+// @version         0.2.0
 // @author          T
 // @include         Ghostwriter.exe
+// @include         dwm.exe
 // @architecture    x86-64
-// @compilerOptions -lruntimeobject -lole32 -loleaut32 -ldwmapi -luser32 -lgdi32 -ladvapi32
-// @license         MIT
+// @compilerOptions -lruntimeobject -lole32 -loleaut32 -ldwmapi -luser32 -lgdi32 -ladvapi32 -lwevtapi
+// @license         GPL-3.0
 // ==/WindhawkMod==
+
+// License: the corner part (the hooks in dwm.exe) follows the approach and the symbol list of "Custom Window Corner
+// Radius" by m417z (GPL-3.0, https://github.com/ramensoftware/windhawk-mods), which is why this file is GPL-3.0 as a whole.
+// The rest of Ghostwriter is MIT.
 
 // ==WindhawkModReadme==
 /*
 # Ghostwriter Blur
+
+Two independent features, each with its own switch (**Enable blur**, **Enable rounded corners**):
+
+* **Blur**: a WindhawkBlur-style backdrop blur behind the overlay, for Ghostwriter windows without a system material
+  (`blur = "none"` in Ghostwriter). Runs inside Ghostwriter.exe.
+* **Rounded corners**: a corner radius of your choice for Ghostwriter windows that have a system material (`acrylic`,
+  `blur`, `mica`, `micaalt`). Windows only offers 0, 4 and 8 px there; the mod makes the window manager (dwm.exe) use the radius
+  of Ghostwriter instead, material included. See **Rounded corners** below.
+
+## Blur
 
 Gives the [Ghostwriter](https://github.com/) overlay (and its status pill) the same kind of backdrop blur that
 Windhawk's `WindhawkBlur` brush gives the taskbar and the Start menu: a Gaussian blur of whatever is behind the window,
@@ -32,13 +47,32 @@ The helper window never takes the focus, never receives mouse input and follows 
 With any other `blur` value in Ghostwriter (acrylic, blur, mica, micaalt) the app already has a system material, and
 the mod stays out of the way (see **Only when the app's blur is "none"**).
 
+## Rounded corners
+
+Windows 11 cuts a window and its material (Acrylic, Mica) to a corner radius of 0, 4 or 8 px only. This mod hooks the
+corner radius in `udwm.dll` (inside `dwm.exe`) and returns Ghostwriter's radius for Ghostwriter windows. Other windows are
+not touched: a window counts as Ghostwriter's only if its class starts with `HwndWrapper[Ghostwriter` and the app has marked it
+with the window property `Ghostwriter.CornerRadius`.
+
+1. In Ghostwriter's `settings.toml` set `custom_corners = true` under `[appearance]` (and keep `blur` at `acrylic`, `blur`,
+   `mica` or `micaalt`). The app then asks Windows to round the window, draws its border with the exact radius and publishes the
+   radius for the mod.
+2. Enable this mod. The radius follows `radius` from the same block (set **CornerRadius** below to override it).
+3. The radius is applied when a window is shown, so changes show up the next time the overlay opens.
+
+Notes: needs a Windows 11 build that has `GetRadiusFromCornerStyle` in `udwm.dll` (24H2 or later is tested by the original
+mod); if the symbols are not found the mod logs it and does nothing. The mod refuses to load right after the window manager
+restarted twice within a minute. A radius larger than half of a window's height (the small status pill) is rounded as far as the
+system allows. If nothing happens, check in Windhawk's advanced settings that `dwm.exe` is allowed as a target process.
+
 ## Settings
 
+* **Enable blur**, **Enable rounded corners**: the two switches; each feature works without the other.
 * **Blur amount**: strength of the Gaussian blur (standard deviation, like `BlurAmount` of `WindhawkBlur`).
 * **Tint color / Tint opacity**: a color laid over the blur. The default is no tint, because Ghostwriter's own
   `background` and `transparency` already tint the surface.
 * **Tint luminosity opacity**, **Tint saturation**, **Noise opacity**, **Noise density**: as in `WindhawkBlur`.
-* **Corner radius**: in pixels at 100% scaling; -1 follows Ghostwriter's `radius`.
+* **Corner radius**: in pixels at 100% scaling; -1 follows Ghostwriter's `radius`. Used for the blur's shape and for the rounded corners.
 
 ## Notes
 
@@ -51,6 +85,15 @@ the mod stays out of the way (see **Only when the app's blur is "none"**).
 
 // ==WindhawkModSettings==
 /*
+- EnableBlur: true
+  $name: Enable blur
+  $description: >-
+    The WindhawkBlur-style blur behind Ghostwriter windows that have no system material (blur = "none" in Ghostwriter).
+- EnableCorners: true
+  $name: Enable rounded corners
+  $description: >-
+    Freely rounded corners for Ghostwriter windows with a system material (needs custom_corners = true in Ghostwriter).
+    Works inside dwm.exe.
 - BlurAmount: 30
   $name: Blur amount
   $description: Strength of the Gaussian blur. 0 = no blur.
@@ -87,15 +130,19 @@ the mod stays out of the way (see **Only when the app's blur is "none"**).
 */
 // ==/WindhawkModSettings==
 
+#include <windhawk_utils.h>
+
 #include <windows.h>
 #include <initguid.h>
 #include <dwmapi.h>
+#include <winevt.h>
 #include <d2d1_1.h>
 #include <roapi.h>
 #include <winstring.h>
 #include <windows.graphics.effects.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -1037,6 +1084,8 @@ struct Settings {
     int cornerRadius = -1;  // -1 = follow Ghostwriter's "radius"
     bool onlyWhenAppBlurIsNone = true;
     bool applyToStatusPill = true;
+    bool enableBlur = true;
+    bool enableCorners = true;
 };
 
 Settings ReadSettings() {
@@ -1074,6 +1123,8 @@ Settings ReadSettings() {
     s.cornerRadius = std::clamp(Wh_GetIntSetting(L"CornerRadius"), -1, 64);
     s.onlyWhenAppBlurIsNone = Wh_GetIntSetting(L"OnlyWhenAppBlurIsNone") != 0;
     s.applyToStatusPill = Wh_GetIntSetting(L"ApplyToStatusPill") != 0;
+    s.enableBlur = Wh_GetIntSetting(L"EnableBlur") != 0;
+    s.enableCorners = Wh_GetIntSetting(L"EnableCorners") != 0;
     return s;
 }
 
@@ -1265,7 +1316,7 @@ float RadiusDip() {
 }
 
 bool AppAllowsHelper() {
-    return !g_cfg.onlyWhenAppBlurIsNone || g_app.blur == L"none";
+    return g_cfg.enableBlur && (!g_cfg.onlyWhenAppBlurIsNone || g_app.blur == L"none");
 }
 
 float DpiScale(HWND hwnd) {
@@ -1696,12 +1747,12 @@ DWORD WINAPI WorkerMain(void*) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-// Windhawk entry points
+// The blur part (runs inside Ghostwriter.exe)
 
-BOOL Wh_ModInit() {
+BOOL InitBlur() {
     Wh_Log(L"Init");
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                       reinterpret_cast<LPCWSTR>(&Wh_ModInit), &g_module);
+                       reinterpret_cast<LPCWSTR>(&InitBlur), &g_module);
 
     {
         std::lock_guard lock(g_settingsMutex);
@@ -1718,7 +1769,7 @@ BOOL Wh_ModInit() {
     return TRUE;
 }
 
-void Wh_ModSettingsChanged() {
+void BlurSettingsChanged() {
     {
         std::lock_guard lock(g_settingsMutex);
         g_pendingSettings = ReadSettings();
@@ -1728,7 +1779,7 @@ void Wh_ModSettingsChanged() {
     }
 }
 
-void Wh_ModUninit() {
+void UninitBlur() {
     Wh_Log(L"Uninit");
     if (g_thread) {
         PostThreadMessageW(g_threadId, WM_QUIT, 0, 0);
@@ -1741,5 +1792,233 @@ void Wh_ModUninit() {
     if (g_ready) {
         CloseHandle(g_ready);
         g_ready = nullptr;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// The corner part (runs inside dwm.exe)
+//
+// DWM cuts a window and its system material to a corner radius it takes from the window's "corner style": 0, 4 or 8 px.
+// The radius is computed in udwm.dll by CTopLevelWindow::GetRadiusFromCornerStyle (and, on newer builds, once more by
+// GetFloatCornerRadiusForCurrentStyle). Both are hooked here; for a Ghostwriter window they return the radius Ghostwriter
+// published, for every other window they return what DWM computed.
+//
+// The approach and the symbol names follow "Custom Window Corner Radius" by m417z (GPL-3.0).
+
+namespace dwmside {
+
+// Ghostwriter sets this property on its windows: the radius in px at 100% scaling, plus one (so that 0 means "not set").
+constexpr wchar_t kRadiusProp[] = L"Ghostwriter.CornerRadius";
+
+std::atomic<bool> g_enabled{true};
+std::atomic<int> g_override{-1};  // -1 = follow the radius Ghostwriter published
+
+using GetWindowData_t = void*(WINAPI*)(void* self);
+GetWindowData_t GetWindowData_Original = nullptr;
+void* IsGhostWindow_Func = nullptr;
+
+// Where CWindowData keeps its HWND. Not exported, so it is read from the code of CWindowData::IsGhostWindow, which loads
+// the HWND member first: the first "mov reg, [rcx+0x..]" in its first instructions.
+size_t g_hwndOffset = SIZE_MAX;
+
+size_t FindHwndOffset(void* function) {
+    BYTE* p = static_cast<BYTE*>(function);
+    for (int i = 0; i < 12; i++) {
+        WH_DISASM_RESULT result;
+        if (!Wh_Disasm(p, &result)) {
+            break;
+        }
+        p += result.length;
+
+        const char* text = result.text;
+        if (strcmp(text, "ret") == 0) {
+            break;
+        }
+        if (strncmp(text, "mov ", 4) != 0) {
+            continue;
+        }
+        const char* bracket = strstr(text, "[rcx+0x");
+        if (!bracket) {
+            continue;
+        }
+        char* end = nullptr;
+        unsigned long long value = strtoull(bracket + 7, &end, 16);
+        if (end && *end == ']') {
+            return static_cast<size_t>(value);
+        }
+    }
+    return SIZE_MAX;
+}
+
+HWND HwndOf(void* topLevelWindow) {
+    if (g_hwndOffset == SIZE_MAX || !GetWindowData_Original) {
+        return nullptr;
+    }
+    void* data = GetWindowData_Original(topLevelWindow);
+    if (!data) {
+        return nullptr;
+    }
+    HWND hwnd = *reinterpret_cast<HWND*>(static_cast<BYTE*>(data) + g_hwndOffset);
+    return IsWindow(hwnd) ? hwnd : nullptr;
+}
+
+// Returns the radius to use for the window, or -1 if it is not a Ghostwriter window (or has no radius to publish).
+// Only calls that never send a message to the window: DWM must not wait for an application.
+int RadiusFor(void* topLevelWindow) {
+    HWND hwnd = HwndOf(topLevelWindow);
+    if (!hwnd) {
+        return -1;
+    }
+    wchar_t className[32]{};
+    if (GetClassNameW(hwnd, className, ARRAYSIZE(className)) <= 0 || wcsncmp(className, L"HwndWrapper[Ghostwriter", 22) != 0) {
+        return -1;
+    }
+    auto published = static_cast<int>(reinterpret_cast<intptr_t>(GetPropW(hwnd, kRadiusProp)));
+    if (published <= 0) {
+        return -1;
+    }
+    int overridden = g_override.load();
+    return overridden >= 0 ? overridden : published - 1;
+}
+
+float Adjust(void* topLevelWindow, float original) {
+    // A zero radius means "square" (maximized, snapped, or the app asked for no rounding): leave it.
+    if (original <= 0.0f || !g_enabled.load()) {
+        return original;
+    }
+    int radius = RadiusFor(topLevelWindow);
+    return radius > 0 ? static_cast<float>(radius) : original;
+}
+
+using GetRadiusFromCornerStyle_t = float(WINAPI*)(void* self);
+GetRadiusFromCornerStyle_t GetRadiusFromCornerStyle_Original = nullptr;
+float WINAPI GetRadiusFromCornerStyle_Hook(void* self) {
+    return Adjust(self, GetRadiusFromCornerStyle_Original(self));
+}
+
+using GetFloatCornerRadiusForCurrentStyle_t = float(WINAPI*)(void* self);
+GetFloatCornerRadiusForCurrentStyle_t GetFloatCornerRadiusForCurrentStyle_Original = nullptr;
+float WINAPI GetFloatCornerRadiusForCurrentStyle_Hook(void* self) {
+    return Adjust(self, GetFloatCornerRadiusForCurrentStyle_Original(self));
+}
+
+void LoadSettings() {
+    g_enabled = Wh_GetIntSetting(L"EnableCorners") != 0;
+    g_override = std::clamp(Wh_GetIntSetting(L"CornerRadius"), -1, 200);
+}
+
+// A faulty hook in the window manager would take the whole desktop down with it. If DWM was restarted twice within the last
+// minute (Dwminit warnings in the Application log), the mod does not load, so a crash loop cannot be made worse.
+bool DwmRestartedRecently() {
+    EVT_HANDLE query = EvtQuery(nullptr, L"Application",
+                                L"*[System[Provider[@Name='Dwminit'] and (Level=3) and TimeCreated[timediff(@SystemTime) <= 60000]]]",
+                                EvtQueryChannelPath);
+    if (!query) {
+        return false;
+    }
+    EVT_HANDLE events[2]{};
+    DWORD returned = 0;
+    BOOL ok = EvtNext(query, ARRAYSIZE(events), events, 1000, 0, &returned);
+    for (DWORD i = 0; i < returned; i++) {
+        EvtClose(events[i]);
+    }
+    EvtClose(query);
+    return ok && returned >= ARRAYSIZE(events);
+}
+
+BOOL Init() {
+    if (DwmRestartedRecently()) {
+        Wh_Log(L"Not loading: the window manager restarted twice within the last minute");
+        return FALSE;
+    }
+
+    LoadSettings();
+
+    HMODULE udwm = GetModuleHandleW(L"udwm.dll");
+    if (!udwm) {
+        Wh_Log(L"udwm.dll is not loaded");
+        return FALSE;
+    }
+
+    WindhawkUtils::SYMBOL_HOOK hooks[] = {
+        // Capture only (no hook): CTopLevelWindow -> CWindowData, to find the HWND of the window being composed.
+        {
+            {LR"(public: class CWindowData * __cdecl CTopLevelWindow::GetWindowData(void)const )"},
+            &GetWindowData_Original,
+            nullptr,
+            true,
+        },
+        // Capture only: its code shows where CWindowData keeps the HWND.
+        {
+            {LR"(public: bool __cdecl CWindowData::IsGhostWindow(struct HWND__ * *)const )"},
+            &IsGhostWindow_Func,
+            nullptr,
+            true,
+        },
+        {
+            {LR"(private: float __cdecl CTopLevelWindow::GetRadiusFromCornerStyle(void))"},
+            &GetRadiusFromCornerStyle_Original,
+            GetRadiusFromCornerStyle_Hook,
+        },
+        // Newer builds compute the radius for the window visuals here (and call the function above); older builds do not have it.
+        {
+            {
+                LR"(public: float __cdecl CTopLevelWindow::GetFloatCornerRadiusForCurrentStyle(void))",
+                LR"(private: float __cdecl CTopLevelWindow::GetFloatCornerRadiusForCurrentStyle(void))",
+            },
+            &GetFloatCornerRadiusForCurrentStyle_Original,
+            GetFloatCornerRadiusForCurrentStyle_Hook,
+            true,
+        },
+    };
+
+    if (!WindhawkUtils::HookSymbols(udwm, hooks, ARRAYSIZE(hooks))) {
+        Wh_Log(L"The symbols of udwm.dll were not found: no rounded corners on this Windows build");
+        return FALSE;
+    }
+
+    // The hooks only take effect after this function returns, so IsGhostWindow still has its original code here.
+    if (IsGhostWindow_Func) {
+        g_hwndOffset = FindHwndOffset(IsGhostWindow_Func);
+    }
+    Wh_Log(L"HWND offset in CWindowData: 0x%zx", g_hwndOffset);
+    if (g_hwndOffset == SIZE_MAX || !GetWindowData_Original) {
+        // Without the HWND the mod cannot tell Ghostwriter's windows from the others, so it leaves all windows alone.
+        Wh_Log(L"Cannot identify windows on this build: corners stay as Windows draws them");
+    }
+    return TRUE;
+}
+
+}  // namespace dwmside
+
+////////////////////////////////////////////////////////////////////////////////
+// Windhawk entry points: one file, two processes.
+
+bool g_inDwm = false;
+
+static bool IsDwmProcess() {
+    wchar_t path[MAX_PATH]{};
+    GetModuleFileNameW(nullptr, path, ARRAYSIZE(path));
+    const wchar_t* name = wcsrchr(path, L'\\');
+    return _wcsicmp(name ? name + 1 : path, L"dwm.exe") == 0;
+}
+
+BOOL Wh_ModInit() {
+    g_inDwm = IsDwmProcess();
+    Wh_Log(L"Init in %s", g_inDwm ? L"dwm.exe (corners)" : L"Ghostwriter.exe (blur)");
+    return g_inDwm ? dwmside::Init() : InitBlur();
+}
+
+void Wh_ModSettingsChanged() {
+    if (g_inDwm) {
+        dwmside::LoadSettings();
+    } else {
+        BlurSettingsChanged();
+    }
+}
+
+void Wh_ModUninit() {
+    if (!g_inDwm) {
+        UninitBlur();
     }
 }

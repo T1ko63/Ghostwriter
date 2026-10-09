@@ -26,6 +26,29 @@ public static class DefaultSettings
             # So viele Ersetzungen merkt sich die App (nur im Arbeitsspeicher, nie auf der Festplatte; 0 = Rückgängig aus).
             undo_history = {{AppSettings.DefaultUndoHistory}}
 
+            # Kopiert den ganzen Text der Ergebnis-Karte (Prompts mit output = "overlay" in prompts.toml) in die Zwischenablage und schließt die Karte.
+            # Der Hotkey ist nur registriert, solange eine Karte sichtbar ist; Esc schließt die Karte (und bricht eine laufende Anfrage ab).
+            # Nicht erlaubt ist einfaches Strg+C, Strg+A und Strg+V: Diese Tasten sendet die App beim Lesen des Textes selbst.
+            result_copy_hotkey = "{{AppSettings.DefaultResultCopyHotkey}}"
+
+            # Wo die Ergebnis-Karte erscheint: "fixed" (an result_fixed_position auf dem Monitor, auf dem das Zielfenster liegt, Standard)
+            # | "follow" (dort, wo sich das Prompt-Menü öffnet, siehe overlay_position) | "caret" (am Textcursor, sonst an der Maus) | "mouse" (an der Maus).
+            # Bei follow, caret und mouse wächst die Karte nach unten, bei zu wenig Platz nach oben.
+            result_position = "{{AppSettings.DefaultResultPosition}}"
+            # Der feste Platz: top-third | center | bottom-third (waagerecht mittig, in der Mitte dieses Drittels), top-left | bottom-left |
+            # top-right | bottom-right (Ecken), left | right (an diesem Rand, senkrecht mittig), top | bottom (an diesem Rand, waagerecht mittig).
+            # Die Karte wächst immer vom Bildschirmrand weg (oben nach unten, unten nach oben, in der Mitte in beide Richtungen).
+            result_fixed_position = "{{AppSettings.DefaultResultFixedPosition}}"
+            # Abstand der Karte zum Bildschirmrand in Pixeln, 0 bis 200.
+            result_screen_margin = {{AppSettings.DefaultResultScreenMargin}}
+            # Schriftgröße des Kartentexts, 8 bis 32 (auch Dezimalwerte wie 14.5).
+            result_font_size = {{AppSettings.DefaultResultFontSize}}
+            # Größe der Karte in Pixeln (sie wird nie größer als der Monitor). Die Breite ist fest (240 bis 1600). Die Höhe folgt dem Text,
+            # ist aber mindestens result_min_height (0 bis 2000, 0 = so klein wie der Text) und höchstens result_max_height (120 bis 2000); darüber scrollt der Text.
+            result_width = {{AppSettings.DefaultResultWidth}}
+            result_min_height = {{AppSettings.DefaultResultMinHeight}}
+            result_max_height = {{AppSettings.DefaultResultMaxHeight}}
+
             # Marker für einmalige Anweisungen im Text, z. B.:  <<kürzer und freundlicher>> Hallo ...
             # Sie wirken in Prompts mit mode = "universal" (siehe prompts.toml): ohne Marker ist der ganze Text ein Auftrag,
             # mit Marker wird dessen Inhalt auf den übrigen Text angewendet. Der Marker steht nie im Ergebnis.
@@ -36,7 +59,16 @@ public static class DefaultSettings
             theme = "system"            # system | light | dark
             # Akzentfarbe für Textcursor, Textmarkierung und Fortschrittslinie (die Auswahlzeile färbt [appearance] selection): "none" (neutral, Standard) | "system" (Windows-Akzent) | Hex wie "#3B82F6".
             accent = "none"
-            overlay_position = "caret"  # caret (am Textcursor, sonst Maus) | mouse | center
+            overlay_position = "caret"  # caret (am Textcursor, sonst Maus) | mouse | fixed (fester Platz, siehe unten)
+            # Prompt-Auswahl (und Fortschrittspille): fester Platz und Größe wie bei der Ergebnis-Karte. Der feste Platz (overlay_position = "fixed"):
+            # top-third | center | bottom-third | top-left | bottom-left | top-right | bottom-right | left | right | top | bottom.
+            # Das Menü wächst vom Bildschirmrand weg. Der Abstand zum Bildschirmrand gilt in Pixeln (0 bis 200).
+            overlay_fixed_position = "{{AppSettings.DefaultOverlayFixedPosition}}"
+            overlay_screen_margin = {{AppSettings.DefaultOverlayScreenMargin}}
+            overlay_font_size = {{AppSettings.DefaultOverlayFontSize}}    # 8 bis 32; das ganze Menü skaliert mit
+            overlay_width = {{AppSettings.DefaultOverlayWidth}}       # 240 bis 1600, nie größer als der Monitor
+            overlay_min_height = {{AppSettings.DefaultOverlayMinHeight}}       # 0 bis 2000 (0 = so klein wie die Liste)
+            overlay_max_height = {{AppSettings.DefaultOverlayMaxHeight}}    # 120 bis 2000: Suchzeile plus acht Zeilen; längere Listen scrollen
             language = "auto"           # auto | de | en
             autostart = false           # mit Windows starten (auch über das Tray-Menü schaltbar)
 
@@ -62,6 +94,9 @@ public static class DefaultSettings
             blur = "acrylic"
             # Feiner Rand um das Fenster: true | false.
             border = true
+            # true: der Radius gilt auch bei acrylic/blur/mica exakt. Braucht den Windhawk-Mod "Ghostwriter Blur" (Teil "Ecken", läuft in dwm.exe);
+            # Windows selbst kennt dort nur 0, 4 und 8 px. Ohne Mod bleibt es bei der Rundung von Windows. false: wie bisher.
+            custom_corners = false
 
             [appearance.dark]
             background = "#000000"     # Farbe der Fensterfläche als #RRGGBB oder rgb(r, g, b), ohne Transparenz (die steuert transparency)

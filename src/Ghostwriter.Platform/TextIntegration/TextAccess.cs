@@ -18,6 +18,30 @@ public enum TextOrigin
     WholeField,
 }
 
+/// <summary>What the captured text is for. Decides which reading steps and checks are allowed (see <see cref="CapturePolicy"/>).</summary>
+public enum CaptureMode
+{
+    /// <summary>The result will replace the text: the field must be writable, and with nothing selected the whole field may be selected (Ctrl+A).</summary>
+    Replace,
+
+    /// <summary>The result is only shown (overlay output): read-only targets are fine, and nothing is ever selected by the app.</summary>
+    Display,
+}
+
+/// <summary>The rules that differ between <see cref="CaptureMode"/>s, kept apart from the Win32 code so they can be tested.</summary>
+public static class CapturePolicy
+{
+    /// <summary>A read-only field cannot take a replacement, but can be read.</summary>
+    public static bool RejectsReadOnly(CaptureMode mode) => mode == CaptureMode.Replace;
+
+    /// <summary>
+    /// Ctrl+A is only ever sent to replace a whole field. For display it would select the whole web page, or leave a field
+    /// fully selected so that the next key press overwrites it.
+    /// </summary>
+    public static bool AllowsSelectAll(CaptureMode mode, bool isItemView, bool isNonTextControl)
+        => mode == CaptureMode.Replace && !isItemView && !isNonTextControl;
+}
+
 public enum CaptureFailure
 {
     None,
@@ -93,13 +117,16 @@ public interface ITextAccess
     Task<FocusProbe> ProbeAsync(TargetInfo target);
 
     /// <summary>Cheap checks that make the whole run pointless (admin window, terminal, password field).</summary>
-    CaptureResult? PreCheck(TargetInfo? target, FocusProbe? probe);
+    CaptureResult? PreCheck(TargetInfo? target, FocusProbe? probe, CaptureMode mode = CaptureMode.Replace);
 
     /// <summary>
     /// Returns the text to work on. Without a probe it probes itself, which only works while the target has the
     /// focus. The clipboard strategy also needs the target to be the foreground window.
+    /// With <see cref="CaptureMode.Display"/> the app never selects anything (no Ctrl+A): no selection means no text,
+    /// except in a field UIA proves to be editable, whose whole text is read without any key press.
     /// </summary>
-    Task<CaptureResult> CaptureAsync(TargetInfo? target, ReadStrategy allowed, FocusProbe? probe = null, CancellationToken ct = default);
+    Task<CaptureResult> CaptureAsync(
+        TargetInfo? target, ReadStrategy allowed, FocusProbe? probe = null, CaptureMode mode = CaptureMode.Replace, CancellationToken ct = default);
 
     Task<ReplaceResult> ReplaceAsync(TextCapture capture, string newText, CancellationToken ct = default);
 }

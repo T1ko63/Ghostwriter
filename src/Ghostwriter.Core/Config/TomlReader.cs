@@ -63,6 +63,53 @@ internal sealed class TomlReader
         return lines;
     }
 
+    /// <summary>
+    /// Reports a key written twice in the same table (e.g. an old line further down the file that overrides the new one at the top).
+    /// The TOML library silently lets the last one win, which is hard to notice. Each table header starts a new scope;
+    /// lines inside multi-line strings are skipped.
+    /// </summary>
+    public void WarnAboutDuplicateKeys()
+    {
+        var seen = new Dictionary<string, int>(StringComparer.Ordinal);
+        var inString = false;
+        for (var i = 0; i < _lines.Length; i++)
+        {
+            var line = _lines[i].TrimEnd('\r');
+            var wasInString = inString;
+            if (CountOccurrences(line, "\"\"\"") % 2 == 1) inString = !inString;
+            if (wasInString) continue;
+
+            var trimmed = line.TrimStart();
+            if (trimmed.StartsWith('['))
+            {
+                seen.Clear();
+                continue;
+            }
+
+            var equals = trimmed.IndexOf('=');
+            if (equals <= 0 || trimmed.StartsWith('#')) continue;
+
+            var key = trimmed[..equals].Trim();
+            if (key.Length == 0 || key.Any(c => !(char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.'))) continue;
+
+            if (seen.TryGetValue(key, out var first))
+            {
+                Issue(i + 1, $"'{key}' is set twice (also in line {first}); the later line wins. Remove one of them", isError: false, show: true);
+            }
+            else
+            {
+                seen[key] = i + 1;
+            }
+        }
+    }
+
+    private static int CountOccurrences(string text, string part)
+    {
+        var count = 0;
+        for (var at = text.IndexOf(part, StringComparison.Ordinal); at >= 0; at = text.IndexOf(part, at + part.Length, StringComparison.Ordinal)) count++;
+        return count;
+    }
+
     /// <summary>The last line of the file (1-based).</summary>
     public int LastLine => _lines.Length;
 

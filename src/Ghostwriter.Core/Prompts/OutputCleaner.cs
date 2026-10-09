@@ -21,7 +21,7 @@ public static class OutputCleaner
         return leading + result + trailing;
     }
 
-    private static bool TryUnfence(string text, out string inner)
+    internal static bool TryUnfence(string text, out string inner)
     {
         inner = text;
         if (!text.StartsWith("```", StringComparison.Ordinal) || !text.EndsWith("```", StringComparison.Ordinal) || text.Length < 6)

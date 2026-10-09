@@ -12,7 +12,14 @@ public static class SettingsLoader
     public const string FileName = "settings.toml";
 
     private static readonly string[] Themes = ["system", "light", "dark"];
-    private static readonly string[] Positions = ["caret", "mouse", "center"];
+    private static readonly string[] Positions = ["caret", "mouse", "fixed", "center"]; // "center" is the old name of "fixed"
+    private static readonly string[] ResultPositions = ["fixed", "follow", "caret", "mouse", "center"]; // "center" is the old name of "fixed"
+
+    /// <summary>The places the result card can have (result_fixed_position).</summary>
+    public static readonly string[] ResultSpots =
+    [
+        "top-third", "center", "bottom-third", "top-left", "bottom-left", "top-right", "bottom-right", "left", "right", "top", "bottom",
+    ];
     private static readonly string[] Languages = ["auto", "de", "en"];
     private static readonly string[] Reasonings = ["off", "default", "low", "medium", "high"];
 
@@ -20,7 +27,9 @@ public static class SettingsLoader
     {
         "overlay_hotkey", "marker_start", "marker_end", "theme", "autostart", "overlay_position", "language",
         "idle_trim_seconds", "default_provider", "providers", "accent", "undo_hotkey", "undo_history",
-        "appearance",
+        "appearance", "result_copy_hotkey", "result_position", "result_font_size",
+        "result_width", "result_max_height", "result_min_height", "result_fixed_position", "result_screen_margin",
+        "overlay_fixed_position", "overlay_screen_margin", "overlay_width", "overlay_min_height", "overlay_max_height", "overlay_font_size",
     };
 
     private static readonly HashSet<string> ProviderKeys = new(StringComparer.Ordinal)
@@ -45,6 +54,7 @@ public static class SettingsLoader
         }
 
         var reader = new TomlReader(FileName, toml, issues);
+        reader.WarnAboutDuplicateKeys();
 
         foreach (var key in root.Keys.Where(k => !TopLevelKeys.Contains(k)))
         {
@@ -67,6 +77,27 @@ public static class SettingsLoader
             reader.Issue(reader.LineOf("undo_history"), $"undo_history must be between 0 and {AppSettings.MaxUndoHistory} (0 = off)", isError: true);
         }
 
+        var resultCopyHotkey = ReadHotkey(root, reader, "result_copy_hotkey", AppSettings.DefaultResultCopyHotkey);
+        if (HotkeyGesture.TryParse(resultCopyHotkey, out var copyGesture, out _) && CollidesWithCapture(copyGesture))
+        {
+            // The app itself sends exactly these keys to read the selection; RegisterHotKey would also catch those.
+            reader.Issue(reader.LineOf("result_copy_hotkey"),
+                $"result_copy_hotkey: {copyGesture} is used by the app to read the selection (Ctrl+C, Ctrl+A, Ctrl+V); choose another hotkey", isError: true);
+        }
+
+        var resultPosition = reader.Choice(root, "result_position", AppSettings.DefaultResultPosition, ResultPositions);
+        if (resultPosition == "center") resultPosition = "fixed";
+        var resultFixedPosition = reader.Choice(root, "result_fixed_position", AppSettings.DefaultResultFixedPosition, ResultSpots);
+        var resultScreenMargin = ReadNumber(root, reader, "result_screen_margin", AppSettings.DefaultResultScreenMargin, AppSettings.MinResultScreenMargin, AppSettings.MaxResultScreenMargin);
+        var resultMinHeight = ReadNumber(root, reader, "result_min_height", AppSettings.DefaultResultMinHeight, AppSettings.MinResultMinHeight, AppSettings.MaxResultMinHeight);
+        var resultFontSize = ReadNumber(root, reader, "result_font_size", AppSettings.DefaultResultFontSize, AppSettings.MinResultFontSize, AppSettings.MaxResultFontSize);
+        var resultWidth = ReadNumber(root, reader, "result_width", AppSettings.DefaultResultWidth, AppSettings.MinResultWidth, AppSettings.MaxResultWidth);
+        var resultMaxHeight = ReadNumber(root, reader, "result_max_height", AppSettings.DefaultResultMaxHeight, AppSettings.MinResultMaxHeight, AppSettings.MaxResultMaxHeight);
+        if (resultMinHeight > resultMaxHeight)
+        {
+            reader.Issue(reader.LineOf("result_min_height"), "result_min_height must not be larger than result_max_height", isError: true);
+        }
+
         var theme = reader.Choice(root, "theme", "system", Themes);
         var accent = reader.Choice(root, "accent", "none", null).Trim();
         if (!IsValidAccent(accent))
@@ -75,6 +106,17 @@ public static class SettingsLoader
         }
 
         var position = reader.Choice(root, "overlay_position", "caret", Positions);
+        if (position == "center") position = "fixed";
+        var overlayFixedPosition = reader.Choice(root, "overlay_fixed_position", AppSettings.DefaultOverlayFixedPosition, ResultSpots);
+        var overlayScreenMargin = ReadNumber(root, reader, "overlay_screen_margin", AppSettings.DefaultOverlayScreenMargin, AppSettings.MinResultScreenMargin, AppSettings.MaxResultScreenMargin);
+        var overlayWidth = ReadNumber(root, reader, "overlay_width", AppSettings.DefaultOverlayWidth, AppSettings.MinOverlayWidth, AppSettings.MaxOverlayWidth);
+        var overlayMinHeight = ReadNumber(root, reader, "overlay_min_height", AppSettings.DefaultOverlayMinHeight, 0, AppSettings.MaxOverlayHeight);
+        var overlayMaxHeight = ReadNumber(root, reader, "overlay_max_height", AppSettings.DefaultOverlayMaxHeight, AppSettings.MinOverlayMaxHeight, AppSettings.MaxOverlayHeight);
+        var overlayFontSize = ReadNumber(root, reader, "overlay_font_size", AppSettings.DefaultOverlayFontSize, AppSettings.MinResultFontSize, AppSettings.MaxResultFontSize);
+        if (overlayMinHeight > overlayMaxHeight)
+        {
+            reader.Issue(reader.LineOf("overlay_min_height"), "overlay_min_height must not be larger than overlay_max_height", isError: true);
+        }
         var language = reader.Choice(root, "language", "auto", Languages);
         var autostart = reader.Bool(root, "autostart", false);
         var idleTrim = reader.Int(root, "idle_trim_seconds", AppSettings.DefaultIdleTrimSeconds);
@@ -130,7 +172,9 @@ public static class SettingsLoader
 
         var settings = new AppSettings(
             overlayHotkey, markerStart, markerEnd, theme, autostart, position, language, idleTrim,
-            defaultProvider.Length == 0 ? null : defaultProvider, providers, accent.ToLowerInvariant(), undoHotkey, undoHistory)
+            defaultProvider.Length == 0 ? null : defaultProvider, providers, accent.ToLowerInvariant(), undoHotkey, undoHistory,
+            resultCopyHotkey, resultPosition, resultFontSize, resultWidth, resultMaxHeight, resultMinHeight, resultFixedPosition, resultScreenMargin,
+            overlayFixedPosition, overlayScreenMargin, overlayWidth, overlayMinHeight, overlayMaxHeight, overlayFontSize)
         {
             Appearance = appearance,
         };
@@ -142,6 +186,29 @@ public static class SettingsLoader
         => accent.Equals("none", StringComparison.OrdinalIgnoreCase)
            || accent.Equals("system", StringComparison.OrdinalIgnoreCase)
            || ColorParser.TryParseAccentHex(accent, out _);
+
+    /// <summary>A whole number or a decimal (15 or 14.5) within [min, max]; anything else is an error and the default stays.</summary>
+    private static double ReadNumber(TomlTable root, TomlReader reader, string key, double fallback, double min, double max)
+    {
+        if (!root.TryGetValue(key, out var value)) return fallback;
+
+        double? number = value switch { long whole => whole, double fraction => fraction, _ => null };
+        if (number is { } n && n >= min && n <= max) return n;
+
+        reader.Issue(reader.LineOf(key), $"{key} must be a number between {min} and {max}", isError: true);
+        return fallback;
+    }
+
+    /// <summary>A key that belongs at the top of settings.toml (above the first [table]), e.g. result_font_size.</summary>
+    public static bool IsGeneralSetting(string key) => key != "providers" && key != "appearance" && TopLevelKeys.Contains(key);
+
+    /// <summary>Hint added to "unknown setting" when a general setting was written below a [table] header, where TOML puts it into that table.</summary>
+    public static string MisplacedHint(string key)
+        => IsGeneralSetting(key) ? " (this is a general setting: it must stand above the first [table] line of the file)" : string.Empty;
+
+    /// <summary>Plain Ctrl+A / Ctrl+C / Ctrl+V: the keys the app simulates itself while reading or replacing text.</summary>
+    public static bool CollidesWithCapture(HotkeyGesture gesture)
+        => gesture.Modifiers == HotkeyModifiers.Ctrl && gesture.VirtualKey is 'A' or 'C' or 'V';
 
     private static string ReadHotkey(TomlTable root, TomlReader reader, string key, string fallback)
     {
@@ -163,7 +230,7 @@ public static class SettingsLoader
 
         foreach (var key in table.Keys.Where(k => !ProviderKeys.Contains(k)))
         {
-            reader.Issue(Line(key), $"[providers.{name}] unknown setting '{key}'", isError: false);
+            reader.Issue(Line(key), $"[providers.{name}] unknown setting '{key}'{MisplacedHint(key)}", isError: false);
         }
 
         var typeText = reader.Choice(table, "type", string.Empty, null, Line);

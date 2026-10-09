@@ -1,11 +1,15 @@
 using System.Diagnostics;
+using System.Text;
 using System.Windows.Media;
 using Ghostwriter.App.Overlay;
+using Ghostwriter.Core.Config;
 using Ghostwriter.Core.Diagnostics;
+using Ghostwriter.Core.Hotkeys;
 using Ghostwriter.Core.Localization;
 using Ghostwriter.Core.Prompts;
 using Ghostwriter.Core.Providers;
 using Ghostwriter.Core.Undo;
+using Ghostwriter.Platform.Hotkeys;
 using Ghostwriter.Platform.Native;
 using Ghostwriter.Platform.TextIntegration;
 using Ghostwriter.Platform.Windowing;
@@ -16,6 +20,15 @@ namespace Ghostwriter.App;
 /// Ties the pieces together: hotkey -> (overlay) -> read text -> run prompt -> replace text.
 /// All entry points run on the UI thread. Only one run is active at a time.
 /// </summary>
+/// <summary>result_position: a fixed place, the place of the prompt picker (follow), the text cursor or the mouse.</summary>
+public enum ResultPlacement
+{
+    Fixed,
+    Follow,
+    Caret,
+    Mouse,
+}
+
 public sealed class AppController
 {
     private sealed record Session(TargetInfo? Target, Task<FocusProbe> Probe, Anchor Anchor);
@@ -41,11 +54,16 @@ public sealed class AppController
     }
 
     private readonly Action? _warmUp;
+    private readonly HotkeyManager? _hotkeys;
+    private readonly ClipboardService? _clipboard;
 
     /// <param name="prompts">Read on every use, so a reloaded prompts.toml is picked up without rebuilding anything.</param>
+    /// <param name="hotkeys">Needed for the temporary Esc and copy hotkeys of the result card (overlay output).</param>
+    /// <param name="clipboard">Needed to copy the text of the result card.</param>
     public AppController(
         ITextAccess text, OverlayWindow overlay, StatusWindow status, IPromptRunner runner,
-        Func<IReadOnlyList<PromptDefinition>> prompts, Action? warmUp = null)
+        Func<IReadOnlyList<PromptDefinition>> prompts, Action? warmUp = null,
+        HotkeyManager? hotkeys = null, ClipboardService? clipboard = null)
     {
         _text = text;
         _overlay = overlay;
@@ -53,19 +71,59 @@ public sealed class AppController
         _runner = runner;
         _prompts = prompts;
         _warmUp = warmUp;
+        _hotkeys = hotkeys;
+        _clipboard = clipboard;
 
         _overlay.PromptChosen += prompt => _ = OnPromptChosenAsync(prompt);
         _overlay.Cancelled += () => _ = CloseOverlayAsync(restoreFocus: true);
         _overlay.Dismissed += () => _ = CloseOverlayAsync(restoreFocus: false);
-        _status.CancelRequested += () => _runCts?.Cancel();
+        _status.CancelRequested += OnStatusCancelRequested;
+        _status.ResultClosed += OnCardClosed;
     }
 
     public OverlayPosition Position { get; set; } = OverlayPosition.Caret;
 
+    /// <summary>overlay_fixed_position and overlay_screen_margin: used when <see cref="Position"/> is <see cref="OverlayPosition.Fixed"/>, and for the margin in every mode.</summary>
+    public CardSpot OverlaySpot { get; set; } = CardSpot.TopThird;
+
+    public double OverlayScreenMargin { get; set; } = AppSettings.DefaultOverlayScreenMargin;
+
+    /// <summary>Size and font of the prompt picker (overlay_width, overlay_min_height, overlay_max_height, overlay_font_size); applied at once.</summary>
+    public void SetOverlayLayout(double width, double minHeight, double maxHeight, double fontSize)
+        => _overlay.SetLayout(width, minHeight, maxHeight, fontSize);
+
+    /// <summary>Where the overlay and the pills go for the current target: a fixed place, or at the text cursor / mouse.</summary>
+    private Anchor MakeAnchor(TargetInfo? target)
+        => Position == OverlayPosition.Fixed
+            ? Anchor.ResolveSpot(target, OverlaySpot, OverlayScreenMargin)
+            : Anchor.Resolve(target, Position) with { MarginDip = OverlayScreenMargin };
+
+    /// <summary>Hotkey that copies the result card (result_copy_hotkey); read when the card opens and after a configuration reload.</summary>
+    public string ResultCopyHotkey { get; set; } = AppSettings.DefaultResultCopyHotkey;
+
+    /// <summary>result_position: where the card opens.</summary>
+    public ResultPlacement ResultPlacement { get; set; } = ResultPlacement.Fixed;
+
+    /// <summary>result_fixed_position.</summary>
+    public CardSpot ResultSpot { get; set; } = CardSpot.BottomThird;
+
+    /// <summary>result_screen_margin: distance of the card to the screen edge, in device-independent pixels.</summary>
+    public double ResultScreenMargin { get; set; } = AppSettings.DefaultResultScreenMargin;
+
+    /// <summary>result_font_size: applied at once, also to a card that is on screen.</summary>
+    public double ResultFontSize
+    {
+        get => _status.ResultFontSize;
+        set => _status.ResultFontSize = value;
+    }
+
+    /// <summary>result_width, result_min_height and result_max_height: size of the card; used for the next card that opens.</summary>
+    public void SetResultSize(double width, double minHeight, double maxHeight) => _status.SetResultSize(width, minHeight, maxHeight);
+
     /// <summary>Environment.TickCount64 of the last hotkey or run; used to find out when the app has been idle for a while.</summary>
     public long LastActivityTick { get; private set; } = Environment.TickCount64;
 
-    public bool IsBusy => _busy || _overlay.IsShown;
+    public bool IsBusy => _busy || _overlay.IsShown || _cardLive;
 
     /// <summary>Raised on every hotkey, after <see cref="LastActivityTick"/> was updated.</summary>
     public event Action? Activity;
@@ -84,10 +142,10 @@ public sealed class AppController
     /// </summary>
     public void ShowNotice(string message)
     {
-        if (_busy)
+        if (_busy || _cardLive)
         {
-            AppLog.Info("Notice skipped: a run is active.");
-            return; // never cover the progress of a running prompt
+            AppLog.Info("Notice skipped: a run is active or a result is on screen.");
+            return; // never cover the progress of a running prompt, or a result the user is reading
         }
 
         AppLog.Info($"Notice: {message}");
@@ -99,6 +157,7 @@ public sealed class AppController
     {
         MarkActivity();
         AppLog.Info("hotkey: overlay");
+        CloseCard(); // a visible result card never blocks the next call
         if (_overlay.IsShown)
         {
             _ = CloseOverlayAsync(restoreFocus: true);
@@ -111,9 +170,10 @@ public sealed class AppController
             return;
         }
 
+        // Read-only targets are fine here: whether that matters is decided once a prompt is chosen (overlay output works, replace does not).
         var target = TargetInfo.Capture();
-        var anchor = Anchor.Resolve(target, Position);
-        if (Reject(_text.PreCheck(target, null), target, anchor)) return;
+        var anchor = MakeAnchor(target);
+        if (Reject(_text.PreCheck(target, null, CaptureMode.Display), target, anchor)) return;
 
         Busy = true;
 
@@ -172,8 +232,7 @@ public sealed class AppController
 
         _session = session;
         _overlay.Present(_prompts());
-        var (x, y) = session.Anchor.PlaceWindow(_overlay.MeasureDesired());
-        _overlay.ShowAt(x, y);
+        _overlay.ShowAnchored(session.Anchor);
         LogFrameLatency(hotkeyTimestamp, session.Target!.ProcessName, anchorKind);
 
         // The time the user needs to pick a prompt is used to have the connection to the AI provider ready.
@@ -183,8 +242,8 @@ public sealed class AppController
     }
 
     /// <summary>Moves a mouse-based anchor to the text cursor if UI Automation found it.</summary>
-    private Anchor Refine(Anchor anchor, TargetInfo? target, FocusProbe probe)
-        => Position == OverlayPosition.Caret && target?.CaretScreenPos is null && probe.Info?.CaretPoint is { } caret
+    private Anchor Refine(Anchor anchor, TargetInfo? target, FocusProbe probe, OverlayPosition? position = null)
+        => (position ?? Position) == OverlayPosition.Caret && target?.CaretScreenPos is null && probe.Info?.CaretPoint is { } caret
             ? Anchor.AtCaret(caret)
             : anchor;
 
@@ -193,6 +252,7 @@ public sealed class AppController
     {
         MarkActivity();
         AppLog.Info($"hotkey: prompt '{prompt.Name}'");
+        CloseCard(); // a visible result card never blocks the next call; its temporary hotkeys are released before anything is read
         if (_busy || _overlay.IsShown)
         {
             AppLog.Info($"Prompt hotkey '{prompt.Name}' ignored: busy.");
@@ -200,8 +260,8 @@ public sealed class AppController
         }
 
         var target = TargetInfo.Capture();
-        var anchor = Anchor.Resolve(target, Position);
-        if (Reject(_text.PreCheck(target, null), target, anchor)) return;
+        var anchor = MakeAnchor(target);
+        if (Reject(_text.PreCheck(target, null, ModeOf(prompt)), target, anchor)) return;
 
         Busy = true;
         var session = new Session(target, _text.ProbeAsync(target!), anchor);
@@ -228,8 +288,9 @@ public sealed class AppController
         var probe = await session.Probe;
         if (_session != session || !_overlay.IsShown) return;
 
-        // A password field can only be recognised by UIA, i.e. after the overlay is already up.
-        if (Reject(_text.PreCheck(session.Target, probe), session.Target, session.Anchor))
+        // A password field can only be recognised by UIA, i.e. after the overlay is already up. A read-only field is not
+        // rejected here (overlay output works there); a replace prompt chosen for it is refused by the capture later.
+        if (Reject(_text.PreCheck(session.Target, probe, CaptureMode.Display), session.Target, session.Anchor))
         {
             _overlay.HideOverlay();
             _session = null;
@@ -268,6 +329,12 @@ public sealed class AppController
 
     private async Task ExecuteAsync(Session session, PromptDefinition prompt, bool restoreFocus, long? hotkeyTimestamp)
     {
+        if (prompt.Output == PromptOutput.Overlay)
+        {
+            await ExecuteOverlayAsync(session, prompt, restoreFocus, hotkeyTimestamp);
+            return;
+        }
+
         var target = session.Target!;
         using var cts = new CancellationTokenSource();
         _runCts = cts;
@@ -285,7 +352,7 @@ public sealed class AppController
             session = session with { Anchor = Refine(session.Anchor, target, probe) };
             _status.ShowProgress(Loc.Get("working", prompt.Name), session.Anchor);
 
-            var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, cts.Token));
+            var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, ct: cts.Token));
             if (!captured.Success)
             {
                 Fail(Describe(captured), session, $"capture failed: {captured.Failure}");
@@ -354,6 +421,291 @@ public sealed class AppController
         }
     }
 
+    // ---- result card (overlay output) ----
+
+    /// <summary>
+    /// True from the moment the answer is requested until the card is gone. Esc, the copy hotkey and the watch on the
+    /// foreground window exist exactly as long as this is true. Unlike a run, a card that is only being read is not "busy".
+    /// </summary>
+    private bool _cardLive;
+
+    private bool _cardComplete;
+    private readonly StringBuilder _cardText = new();
+    private Anchor _cardAnchor;
+    private int _escHotkeyId;
+    private int _copyHotkeyId;
+    private ForegroundWatcher? _watcher;
+
+    private static CaptureMode ModeOf(PromptDefinition prompt)
+        => prompt.Output == PromptOutput.Overlay ? CaptureMode.Display : CaptureMode.Replace;
+
+    /// <summary>
+    /// A run whose result is shown in the card instead of replacing the text. Nothing in the target is changed: no
+    /// paste, no history for undo, no "target changed" check. The text is read without ever selecting anything (no Ctrl+A).
+    /// </summary>
+    /// <summary>Where the card opens: a fixed place, like the picker (follow), at the text cursor, or at the mouse.</summary>
+    private Anchor ResultAnchor(TargetInfo target, FocusProbe probe, Anchor pickerAnchor) => ResultPlacement switch
+    {
+        ResultPlacement.Fixed => Anchor.ResolveSpot(target, ResultSpot, ResultScreenMargin),
+        ResultPlacement.Caret => Refine(Anchor.Resolve(target, OverlayPosition.Caret), target, probe, OverlayPosition.Caret) with { MarginDip = ResultScreenMargin },
+        ResultPlacement.Mouse => Anchor.Resolve(target, OverlayPosition.Mouse) with { MarginDip = ResultScreenMargin },
+        _ => Refine(pickerAnchor, target, probe) with { MarginDip = ResultScreenMargin },
+    };
+
+    private async Task ExecuteOverlayAsync(Session session, PromptDefinition prompt, bool restoreFocus, long? hotkeyTimestamp)
+    {
+        var target = session.Target!;
+        using var cts = new CancellationTokenSource();
+        _runCts = cts;
+        var started = Stopwatch.GetTimestamp();
+        var origin = hotkeyTimestamp ?? started;
+        var since = hotkeyTimestamp.HasValue ? "hotkey" : "choice";
+        try
+        {
+            if (restoreFocus && !await WindowHelper.RestoreFocusAsync(target))
+            {
+                _status.ShowError(Loc.Get("err_focus"), session.Anchor);
+                return;
+            }
+
+            var probe = await session.Probe;
+            // By default the card has a fixed place on the screen: at the end of the selection it would often be pushed against
+            // the screen edge (the selection can reach beyond the visible page) and cover what is being read.
+            session = session with
+            {
+                Anchor = ResultAnchor(target, probe, session.Anchor),
+            };
+            _status.BeginResult(Loc.Get("working", prompt.Name), session.Anchor);
+
+            var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, CaptureMode.Display, cts.Token));
+            if (!captured.Success)
+            {
+                Fail(captured.Failure == CaptureFailure.NoText ? Loc.Get("err_no_selection") : Describe(captured), session,
+                    $"capture failed: {captured.Failure} (overlay output)");
+                return;
+            }
+
+            var capture = captured.Capture!;
+
+            // The text is read: from here on the card owns Esc and the copy hotkey. Registering only now keeps them out of
+            // the way of the keys the app sends itself while reading.
+            OpenCard(session.Anchor, target);
+            if (!ReferenceEquals(_runCts, cts)) return; // the foreground window had already changed
+
+            var timings = new LlmTimings();
+            var pieces = 0;
+            await foreach (var piece in _runner.StreamAsync(prompt, capture.Text, cts.Token, timings))
+            {
+                if (!ReferenceEquals(_runCts, cts)) return; // the card was closed or replaced: this run is obsolete
+
+                _cardText.Append(piece);
+                _status.AppendResult(piece);
+                if (pieces++ == 0) LogFirstText(target.ProcessName, prompt.Name, origin, since);
+            }
+
+            if (!ReferenceEquals(_runCts, cts)) return;
+            _cardComplete = true;
+            _status.EndResult();
+
+            AppLog.Info($"[{target.ProcessName}] '{prompt.Name}' ({prompt.Mode}, overlay) ok via {capture.UsedStrategy}/{capture.Origin}, "
+                + $"{capture.Text.Length} chars -> {_cardText.Length} chars, read {capture.Duration.TotalMilliseconds:F0} ms, "
+                + $"total since {since} {Stopwatch.GetElapsedTime(origin).TotalMilliseconds:F0} ms");
+            if (timings.Sent != 0)
+            {
+                AppLog.Info($"  timing since {since}: request sent {LlmTimings.Ms(origin, timings.Sent):F0} ms, "
+                    + $"response headers +{LlmTimings.Ms(timings.Sent, timings.Headers):F0} ms, first text +{LlmTimings.Ms(timings.Headers, timings.FirstToken):F0} ms, "
+                    + $"answer complete +{LlmTimings.Ms(timings.FirstToken, timings.Done):F0} ms (attempts: {timings.Attempts})");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // A click on the pill while the text was being read. A card closed by Esc, a new call or another window cancels
+            // through CloseCard, which has already hidden it.
+            if (ReferenceEquals(_runCts, cts))
+            {
+                _status.HideStatus();
+                AppLog.Info("Run cancelled by the user.");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (ReferenceEquals(_runCts, cts)) ReportFailure(ex, prompt, target, session.Anchor);
+            else AppLog.Info($"[{target.ProcessName}] '{prompt.Name}': obsolete overlay run ended with {ex.GetType().Name}.");
+        }
+        finally
+        {
+            // A card that replaced this run (or closed it) owns _runCts and the busy flag by now.
+            if (ReferenceEquals(_runCts, cts))
+            {
+                _runCts = null;
+                Busy = false;
+            }
+        }
+    }
+
+    /// <summary>The same messages as a replace run gives; the card (if it is up) is replaced by the error pill, so no half answer stays.</summary>
+    private void ReportFailure(Exception ex, PromptDefinition prompt, TargetInfo target, Anchor anchor)
+    {
+        switch (ex)
+        {
+            case MarkerException marker:
+                // An unclosed or empty marker: nothing was sent.
+                AppLog.Info($"[{target.ProcessName}] '{prompt.Name}': marker {marker.Status}");
+                _status.ShowError(marker.Status == MarkerStatus.Empty
+                    ? Loc.Get("err_marker_empty")
+                    : Loc.Get("err_marker_unclosed", marker.Start, marker.End), anchor);
+                break;
+            case LlmException llm:
+                // A rejected request may quote parts of the user's text back; that detail is shown, but not written to the log.
+                var logDetail = llm.Kind == LlmErrorKind.BadRequest ? string.Empty : llm.Detail;
+                AppLog.Warn($"AI call failed: {llm.Provider}: {llm.Kind} (HTTP {llm.StatusCode?.ToString() ?? "-"}) {logDetail}");
+                _status.ShowError(Describe(llm), anchor);
+                break;
+            default:
+                AppLog.Error("Run failed.", ex);
+                _status.ShowError(Loc.Get("err_unexpected", ex.GetType().Name), anchor);
+                break;
+        }
+    }
+
+    private void OpenCard(Anchor anchor, TargetInfo target)
+    {
+        _cardLive = true;
+        _cardComplete = false;
+        _cardText.Clear();
+        _cardAnchor = anchor;
+        RegisterCardHotkeys();
+
+        // Installed last: it reports at once if the foreground window has already changed, which closes the card again.
+        var watcher = ForegroundWatcher.Start(target.Window, OnForegroundChanged);
+        if (_cardLive) _watcher = watcher;
+        else watcher?.Dispose();
+    }
+
+    /// <summary>
+    /// Closes the card if there is one: stops a request that is still streaming, hides the window and (through
+    /// <see cref="OnCardClosed"/>) releases Esc, the copy hotkey and the foreground watch. Safe to call at any time.
+    /// </summary>
+    private void CloseCard()
+    {
+        if (!_cardLive) return;
+
+        var run = _runCts;
+        _runCts = null; // the run notices that it is obsolete and stays out of the way of whatever comes next
+        if (run is not null)
+        {
+            run.Cancel();
+            Busy = false;
+        }
+
+        AppLog.Info(run is null ? "Result card closed." : "Result card closed while the answer was streaming: request cancelled.");
+        _status.HideStatus();
+        OnCardClosed();
+    }
+
+    /// <summary>The window left result mode (closed, or replaced by an error or info pill): nothing of the card may stay registered.</summary>
+    private void OnCardClosed()
+    {
+        if (!_cardLive) return;
+        _cardLive = false;
+        _cardComplete = false;
+        _cardText.Clear();
+        UnregisterCardHotkeys();
+        _watcher?.Dispose();
+        _watcher = null;
+    }
+
+    private void OnStatusCancelRequested()
+    {
+        if (_cardLive) CloseCard();
+        else _runCts?.Cancel();
+    }
+
+    private void OnForegroundChanged()
+    {
+        if (!_cardLive) return;
+        AppLog.Info("Foreground window changed: closing the result card.");
+        CloseCard();
+    }
+
+    private void OnCardEsc(long hotkeyTimestamp)
+    {
+        AppLog.Info("hotkey: Esc (result card)");
+        CloseCard();
+    }
+
+    private void OnCardCopy(long hotkeyTimestamp)
+    {
+        AppLog.Info("hotkey: copy result");
+        if (!_cardLive) return;
+        if (!_cardComplete)
+        {
+            AppLog.Info("Copy ignored: the answer is still streaming.");
+            return;
+        }
+
+        var text = _cardText.ToString();
+        if (_clipboard is null || !_clipboard.TrySetText(text, hidden: false))
+        {
+            _status.ShowError(Loc.Get("err_clipboard_busy"), _cardAnchor);
+            return;
+        }
+
+        AppLog.Info($"Result copied: {text.Length} chars.");
+        _status.ShowInfo(Loc.Get("result_copied"), _cardAnchor); // also ends result mode, which releases the hotkeys
+    }
+
+    private void RegisterCardHotkeys()
+    {
+        if (_hotkeys is null) return;
+        UnregisterCardHotkeys();
+
+        var esc = _hotkeys.Register(new HotkeyGesture(HotkeyModifiers.None, VK_ESCAPE), OnCardEsc, temporary: true);
+        if (esc.Success) _escHotkeyId = esc.Id;
+        else AppLog.Warn($"Esc could not be registered for the result card: {esc.Error}");
+
+        if (!HotkeyGesture.TryParse(ResultCopyHotkey, out var gesture, out _)) return;
+        var copy = _hotkeys.Register(gesture, OnCardCopy, temporary: true);
+        if (copy.Success) _copyHotkeyId = copy.Id;
+        else AppLog.Warn($"The copy hotkey could not be registered for the result card: {copy.Error}");
+    }
+
+    private void UnregisterCardHotkeys()
+    {
+        if (_hotkeys is null) return;
+        if (_escHotkeyId != 0) _hotkeys.Unregister(_escHotkeyId);
+        if (_copyHotkeyId != 0) _hotkeys.Unregister(_copyHotkeyId);
+        _escHotkeyId = _copyHotkeyId = 0;
+    }
+
+    /// <summary>
+    /// Releases the card's temporary hotkeys. Called before the configured hotkeys are registered anew, so a reload can
+    /// never collide with them (a prompt may have been given the key that copies the card).
+    /// </summary>
+    public void ReleaseResultHotkeys() => UnregisterCardHotkeys();
+
+    /// <summary>Registers the temporary hotkeys again (with the current <see cref="ResultCopyHotkey"/>) if a card is on screen.</summary>
+    public void RestoreResultHotkeys()
+    {
+        if (_cardLive) RegisterCardHotkeys();
+    }
+
+    private const int VK_ESCAPE = 0x1B;
+
+    /// <summary>Logs the time from hotkey/choice to the first text of the card, once layout is done and once the frame is rendered.</summary>
+    private static void LogFirstText(string app, string prompt, long origin, string since)
+    {
+        var layout = Stopwatch.GetElapsedTime(origin).TotalMilliseconds;
+        EventHandler? handler = null;
+        handler = (_, _) =>
+        {
+            CompositionTarget.Rendering -= handler;
+            AppLog.Info($"[{app}] '{prompt}' first text in the card: layout done {layout:F0} ms, "
+                + $"first frame {Stopwatch.GetElapsedTime(origin).TotalMilliseconds:F0} ms since {since}");
+        };
+        CompositionTarget.Rendering += handler;
+    }
+
     // ---- undo ----
 
     /// <summary>The last replacements, in memory only. Capacity follows undo_history.</summary>
@@ -366,6 +718,7 @@ public sealed class AppController
     {
         MarkActivity();
         AppLog.Info("hotkey: undo");
+        CloseCard();
         if (_busy || _overlay.IsShown)
         {
             AppLog.Info("Undo hotkey ignored: busy.");
@@ -373,7 +726,7 @@ public sealed class AppController
         }
 
         var target = TargetInfo.Capture();
-        var anchor = Anchor.Resolve(target, Position);
+        var anchor = MakeAnchor(target);
         if (Reject(_text.PreCheck(target, null), target, anchor)) return;
         if (History.Count == 0)
         {
@@ -396,7 +749,7 @@ public sealed class AppController
             session = session with { Anchor = Refine(session.Anchor, target, probe) };
 
             // Read what is in the field right now (selection, otherwise the whole field), exactly as for a normal run.
-            var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, cts.Token));
+            var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, ct: cts.Token));
             if (!captured.Success)
             {
                 // An empty field cannot contain the stored result.

@@ -135,7 +135,9 @@ public partial class App : Application
         _controller = new AppController(
             new TextAccessService(_clipboard), overlay, status, runner,
             prompts: () => _config.Current.Prompts,
-            warmUp: () => _ = _providers!.WarmUpAsync());
+            warmUp: () => _ = _providers!.WarmUpAsync(),
+            hotkeys: _hotkeys,
+            clipboard: _clipboard);
 
         ApplyConfig(loaded, initial: true);
         Lap("apply config+hotkeys");
@@ -233,13 +235,31 @@ public partial class App : Application
             _controller.Position = Enum.TryParse<OverlayPosition>(settings.OverlayPosition, ignoreCase: true, out var position)
                 ? position
                 : OverlayPosition.Caret;
+            _controller.ResultCopyHotkey = settings.ResultCopyHotkey;
+            _controller.OverlaySpot = ParseSpot(settings.OverlayFixedPosition, CardSpot.TopThird);
+            _controller.OverlayScreenMargin = settings.OverlayScreenMargin;
+            _controller.SetOverlayLayout(settings.OverlayWidth, settings.OverlayMinHeight, settings.OverlayMaxHeight, settings.OverlayFontSize);
+            _controller.ResultPlacement = Enum.TryParse<ResultPlacement>(settings.ResultPosition, ignoreCase: true, out var placement)
+                ? placement
+                : ResultPlacement.Fixed;
+            _controller.ResultSpot = ParseSpot(settings.ResultFixedPosition, CardSpot.BottomThird);
+            _controller.ResultScreenMargin = settings.ResultScreenMargin;
+            _controller.ResultFontSize = settings.ResultFontSize;
+            _controller.SetResultSize(settings.ResultWidth, settings.ResultMinHeight, settings.ResultMaxHeight);
 
             // A fresh registry for the new provider settings; the HttpClient (and its warm connections) is kept.
             _providers = new ProviderRegistry(settings.Providers, settings.DefaultProvider, _http);
             _ = _providers.WarmUpAsync();
         }
 
-        if (initial || result.Changed) RegisterHotkeys(settings, prompts);
+        if (initial || result.Changed)
+        {
+            // A result card on screen holds Esc and the copy hotkey temporarily. They are released while the configured
+            // hotkeys are registered anew (a prompt may just have been given the card's copy key) and taken again afterwards.
+            _controller!.ReleaseResultHotkeys();
+            RegisterHotkeys(settings, prompts);
+            _controller.RestoreResultHotkeys();
+        }
 
         if (initial || result.SettingsChanged)
         {
@@ -321,6 +341,9 @@ public partial class App : Application
         _theme!.Set(Enum.TryParse<AppTheme>(text, ignoreCase: true, out var theme) ? theme : AppTheme.System, settings.Accent, settings.Appearance);
     }
 
+    private static CardSpot ParseSpot(string name, CardSpot fallback)
+        => Enum.TryParse<CardSpot>(name.Replace("-", string.Empty), ignoreCase: true, out var spot) ? spot : fallback;
+
     /// <summary>Registers the overlay, inline and all prompt hotkeys anew. Hotkeys another app already owns are reported.</summary>
     private void RegisterHotkeys(AppSettings settings, IReadOnlyList<PromptDefinition> prompts)
     {
@@ -350,6 +373,7 @@ public partial class App : Application
 
         Register(settings.OverlayHotkey, "Overlay", _controller!.OnOverlayHotkey);
         if (settings.UndoHistory > 0) Register(settings.UndoHotkey, Loc.Get("undo_label"), _controller.OnUndoHotkey);
+        // The result-copy hotkey is not registered here: it only exists while a result card is on screen (AppController).
         foreach (var prompt in prompts.Where(p => p.Hotkey is not null))
         {
             var captured = prompt;
@@ -404,8 +428,8 @@ public partial class App : Application
 
     private void ApplyLook(OverlayWindow overlay, StatusWindow status)
     {
-        overlay.ApplyLook(_theme!.IsDark, _theme.Backdrop, _theme.NativeCornerPx);
-        status.ApplyLook(_theme.IsDark, _theme.Backdrop, _theme.NativeCornerPx);
+        overlay.ApplyLook(_theme!.IsDark, _theme.Backdrop, _theme.NativeCornerPx, _theme.CustomCornerRadius);
+        status.ApplyLook(_theme.IsDark, _theme.Backdrop, _theme.NativeCornerPx, _theme.CustomCornerRadius);
     }
 
     private IReadOnlyList<TrayMenuItem> BuildMenu() =>

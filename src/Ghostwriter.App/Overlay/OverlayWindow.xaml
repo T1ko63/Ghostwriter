@@ -5,18 +5,18 @@
         Width="{StaticResource Overlay.Width}" SizeToContent="Height"
         WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True" ShowActivated="False"
         Background="Transparent" Foreground="{DynamicResource TextBrush}"
-        FontFamily="{StaticResource Font.Family}" FontSize="{StaticResource Font.Row}"
+        FontFamily="{StaticResource Font.Family}" FontSize="{DynamicResource Font.Row}"
         TextOptions.TextFormattingMode="Ideal" UseLayoutRounding="True" SnapsToDevicePixels="True"
         PreviewKeyDown="OnPreviewKeyDown" Deactivated="OnDeactivated">
 
     <Border x:Name="Panel" Background="{DynamicResource SurfaceBrush}">
         <StackPanel>
-            <Grid Height="{StaticResource Search.Height}">
+            <Grid Height="{DynamicResource Search.Height}">
                 <TextBlock x:Name="Placeholder" Margin="{StaticResource Search.Padding}" VerticalAlignment="Center"
-                           FontSize="{StaticResource Font.Search}" Foreground="{DynamicResource PlaceholderBrush}"
+                           FontSize="{DynamicResource Font.Search}" Foreground="{DynamicResource PlaceholderBrush}"
                            IsHitTestVisible="False"/>
                 <TextBox x:Name="Search" Margin="{StaticResource Search.Padding}" VerticalAlignment="Center"
-                         FontSize="{StaticResource Font.Search}" Background="Transparent" BorderThickness="0" Padding="0"
+                         FontSize="{DynamicResource Font.Search}" Background="Transparent" BorderThickness="0" Padding="0"
                          Foreground="{DynamicResource TextBrush}" CaretBrush="{DynamicResource CaretBrush}"
                          SelectionBrush="{DynamicResource TextSelectionBrush}" SelectionOpacity="1"
                          TextChanged="OnSearchChanged"/>
@@ -35,17 +35,17 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding Number}" FontSize="{StaticResource Font.Number}"
+                                <TextBlock Grid.Column="0" Text="{Binding Number}" FontSize="{DynamicResource Font.Number}"
                                            Foreground="{DynamicResource SubtleBrush}" VerticalAlignment="Center"/>
                                 <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis"
                                            Foreground="{DynamicResource TextBrush}" VerticalAlignment="Center"/>
-                                <TextBlock Grid.Column="2" Text="{Binding Hotkey}" FontSize="{StaticResource Font.Hotkey}"
+                                <TextBlock Grid.Column="2" Text="{Binding Hotkey}" FontSize="{DynamicResource Font.Hotkey}"
                                            Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" Margin="16,0,0,0"/>
                             </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-                <TextBlock x:Name="NoResults" Height="{StaticResource Row.Height}" Margin="20,1" VerticalAlignment="Top"
+                <TextBlock x:Name="NoResults" Height="{DynamicResource Row.Height}" Margin="20,1" VerticalAlignment="Top"
                            Padding="0,10,0,0" Foreground="{DynamicResource MutedBrush}" Visibility="Collapsed"/>
             </Grid>
         </StackPanel>

@@ -31,6 +31,9 @@ public sealed class GeminiProvider : LlmProvider
             },
         },
         ["generationConfig"] = new JsonObject { ["maxOutputTokens"] = request.MaxOutputTokens },
+        // Grounding with Google Search, so answers are not limited to the model's training data.
+        // Gemini 2.x/3.x use "googleSearch"; the older "googleSearchRetrieval" is rejected by these models.
+        ["tools"] = new JsonArray { new JsonObject { ["googleSearch"] = new JsonObject() } },
     };
 
     protected override void AddHeaders(HttpRequestMessage message) => message.Headers.Add("x-goog-api-key", AuthKey);

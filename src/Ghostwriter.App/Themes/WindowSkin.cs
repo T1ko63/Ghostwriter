@@ -65,11 +65,14 @@ internal static class WindowSkin
     /// Applies dark/light mode, the system material and the corner size DWM should use. Call when the configuration
     /// changes (not when the window is shown). Layered windows (the fallback) get no material and are shaped by the panel.
     /// </summary>
-    public static void ApplyLook(nint hwnd, bool dark, WindowBackdrop backdrop, int nativeCornerPx)
+    public static void ApplyLook(nint hwnd, bool dark, WindowBackdrop backdrop, int nativeCornerPx, int customRadius = 0)
     {
         _backdrop = backdrop;
         if (hwnd == 0) return;
         WindowHelper.ApplyLook(hwnd, dark, BackdropEnabled ? backdrop : null, BackdropEnabled ? nativeCornerPx : 0);
+
+        // Published for the Windhawk mod (corners), which lets DWM use this radius instead of 0, 4 or 8 px.
+        WindowHelper.SetCornerRadiusProperty(hwnd, BackdropEnabled ? customRadius : 0);
     }
 
     private static WindowBackdrop _backdrop = WindowBackdrop.None;

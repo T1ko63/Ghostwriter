@@ -50,10 +50,19 @@ public sealed class ThemeService
     /// Window corner radius in device-independent pixels. Exactly the configured radius, except on a system material,
     /// where only the DWM sizes 0, 4 and 8 exist.
     /// </summary>
-    public int WindowRadius => UsesSystemMaterial ? AppearanceSettings.NativeCornerRadius(_appearance.Radius) : _appearance.Radius;
+    public int WindowRadius => UsesSystemMaterial && !CustomCorners ? AppearanceSettings.NativeCornerRadius(_appearance.Radius) : _appearance.Radius;
+
+    /// <summary>
+    /// custom_corners is on and there is a system material: the window then has exactly the configured radius, provided the Windhawk mod
+    /// "Ghostwriter Blur" (corners) is running; Windows itself would use 0, 4 or 8 px.
+    /// </summary>
+    public bool CustomCorners => UsesSystemMaterial && _appearance.CustomCorners;
+
+    /// <summary>The radius published to the mod (0 = none): only when <see cref="CustomCorners"/> and the window is rounded at all.</summary>
+    public int CustomCornerRadius => CustomCorners && NativeCornerPx > 0 ? _appearance.Radius : 0;
 
     /// <summary>The corner size to ask DWM for: the native size on a system material, otherwise 0 (the panel does the rounding).</summary>
-    public int NativeCornerPx => UsesSystemMaterial ? WindowRadius : 0;
+    public int NativeCornerPx => UsesSystemMaterial ? AppearanceSettings.NativeCornerRadius(_appearance.Radius) : 0;
 
     /// <summary>The system material for the configured blur (only used where windows can have one).</summary>
     public WindowBackdrop Backdrop => _appearance.Blur switch

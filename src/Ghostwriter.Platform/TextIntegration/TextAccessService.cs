@@ -41,7 +41,7 @@ public sealed class TextAccessService : ITextAccess
         return new FocusProbe(info);
     }
 
-    public CaptureResult? PreCheck(TargetInfo? target, FocusProbe? probe)
+    public CaptureResult? PreCheck(TargetInfo? target, FocusProbe? probe, CaptureMode mode = CaptureMode.Replace)
     {
         if (target is null) return CaptureResult.Fail(CaptureFailure.NoTarget);
         if (target.IsElevated && !TargetInfo.SelfIsElevated)
@@ -51,14 +51,19 @@ public sealed class TextAccessService : ITextAccess
 
         if (target.IsTerminal) return CaptureResult.Fail(CaptureFailure.UnsupportedApp, target.ProcessName);
         if (target.IsWin32PasswordEdit || probe?.Info?.IsPassword == true) return CaptureResult.Fail(CaptureFailure.PasswordField);
-        if (target.IsWin32ReadOnlyEdit || probe?.Info?.IsReadOnly == true) return CaptureResult.Fail(CaptureFailure.ReadOnlyField);
+        if (CapturePolicy.RejectsReadOnly(mode) && (target.IsWin32ReadOnlyEdit || probe?.Info?.IsReadOnly == true))
+        {
+            return CaptureResult.Fail(CaptureFailure.ReadOnlyField);
+        }
+
         return null;
     }
 
     public async Task<CaptureResult> CaptureAsync(
-        TargetInfo? target, ReadStrategy allowed, FocusProbe? probe = null, CancellationToken ct = default)
+        TargetInfo? target, ReadStrategy allowed, FocusProbe? probe = null,
+        CaptureMode mode = CaptureMode.Replace, CancellationToken ct = default)
     {
-        var rejected = PreCheck(target, probe);
+        var rejected = PreCheck(target, probe, mode);
         if (rejected is not null) return rejected;
         if (target is null) return CaptureResult.Fail(CaptureFailure.NoTarget); // unreachable: PreCheck rejects null
 
@@ -70,7 +75,7 @@ public sealed class TextAccessService : ITextAccess
             uia = probe.Info;
             if (uia?.IsPassword == true) return CaptureResult.Fail(CaptureFailure.PasswordField);
 
-            if (uia?.IsReadOnly == true) return CaptureResult.Fail(CaptureFailure.ReadOnlyField);
+            if (uia?.IsReadOnly == true && CapturePolicy.RejectsReadOnly(mode)) return CaptureResult.Fail(CaptureFailure.ReadOnlyField);
             if (uia?.TooLong == true) return CaptureResult.Fail(CaptureFailure.TooLong);
 
             // A positive UIA answer is trusted; an empty one is not (many apps report "no selection" wrongly).
@@ -104,7 +109,9 @@ public sealed class TextAccessService : ITextAccess
 
         if (!allowed.HasFlag(ReadStrategy.Clipboard)) return CaptureResult.Fail(CaptureFailure.NoText);
 
-        var canSelectAll = !target.IsItemView && uia?.IsNonTextControl != true;
+        // Display mode never sends Ctrl+A (neither as "select all first" nor as fallback): with nothing selected it
+        // would select the whole page or leave a field fully selected. Without a selection the result is NoText.
+        var canSelectAll = CapturePolicy.AllowsSelectAll(mode, target.IsItemView, uia?.IsNonTextControl == true);
 
         // Web-engine editor with a known empty selection: UIA cannot be trusted for the content, and a plain Ctrl+C
         // without selection would copy just the current line in VS Code. Select all first, then copy.

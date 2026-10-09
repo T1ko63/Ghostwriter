@@ -13,13 +13,20 @@ public enum BlurMode
 public sealed record ThemeColors(Rgba Background, Rgba Foreground, Rgba Selection);
 
 /// <summary>The [appearance] block of settings.toml, validated, with defaults for everything that is missing or invalid.</summary>
-public sealed record AppearanceSettings(int Transparency, int Radius, BlurMode Blur, ThemeColors Dark, ThemeColors Light, bool Border = true)
+public sealed record AppearanceSettings(
+    int Transparency, int Radius, BlurMode Blur, ThemeColors Dark, ThemeColors Light, bool Border = true, bool CustomCorners = false)
 {
     public const int DefaultTransparency = 50;
     public const int DefaultRadius = 10;
     public const BlurMode DefaultBlur = BlurMode.Acrylic;
-    public const int MaxRadius = 32;
+    public const int MaxRadius = 100;
     public const bool DefaultBorder = true;
+
+    /// <summary>
+    /// custom_corners: the corner radius is meant to be applied exactly, also on a system material (Acrylic, Mica). Windows itself only
+    /// offers 0, 4 and 8 px there; the Windhawk mod "Ghostwriter Blur" (corners) makes the window manager use the real radius.
+    /// </summary>
+    public const bool DefaultCustomCorners = false;
 
     public static readonly ThemeColors DefaultDark = new(
         Rgba.Opaque(0x00, 0x00, 0x00), Rgba.Opaque(0xF0, 0xF0, 0xF0), new Rgba(0x40, 0xFF, 0xFF, 0xFF));
@@ -36,7 +43,10 @@ public sealed record AppearanceSettings(int Transparency, int Radius, BlurMode B
     public byte SurfaceAlpha => OpacityToAlpha(OpacityPercent);
 
     /// <summary>Corner radius of the highlighted row: a bit smaller than the window's.</summary>
-    public int RowRadius => (int)Math.Round(Radius * 0.6, MidpointRounding.AwayFromZero);
+    public int RowRadius => Math.Min(MaxRowRadius, (int)Math.Round(Radius * 0.6, MidpointRounding.AwayFromZero));
+
+    /// <summary>A row is 38 px high; a larger corner radius would only make it a pill, so the rows stop at half of that.</summary>
+    public const int MaxRowRadius = 19;
 
     public ThemeColors For(bool dark) => dark ? Dark : Light;
 

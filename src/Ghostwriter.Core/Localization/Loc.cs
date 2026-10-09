@@ -17,6 +17,8 @@ public static class Loc
         ["err_terminal"] = ("Terminals werden nicht unterstützt (Strg+C würde das laufende Programm abbrechen).",
             "Terminals are not supported (Ctrl+C would interrupt the running program)."),
         ["err_no_text"] = ("Kein Text gefunden.", "No text found."),
+        ["err_no_selection"] = ("Kein Text markiert.", "No text selected."),
+        ["result_copied"] = ("Kopiert", "Copied"),
         ["err_too_long"] = ("Der Text ist zu lang (mehr als 50.000 Zeichen).", "The text is too long (more than 50,000 characters)."),
         ["err_read_only"] = ("Dieses Feld ist schreibgeschützt.", "This field is read-only."),
         ["llm_auth"] = ("{0}: API-Schlüssel fehlt oder wurde abgelehnt{1}.", "{0}: API key missing or rejected{1}."),

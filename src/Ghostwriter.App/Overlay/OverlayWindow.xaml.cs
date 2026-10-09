@@ -34,13 +34,33 @@ public partial class OverlayWindow : Window
     private bool _activated;
     private bool _hiding;
 
+    // Size and font from settings.toml (overlay_width, overlay_min_height, overlay_max_height, overlay_font_size).
+    private double _width;
+    private double _minHeight;
+    private double _maxHeight;
+    private readonly double _baseFont, _baseSearch, _baseHotkey, _baseNumber, _baseRowHeight, _baseSearchHeight;
+
+    // Set when the picker has a fixed place: it then keeps its fixed edge while the list gets shorter or longer.
+    private bool _spotted;
+    private CardPlacement _placement;
+    private double _placementScale = 1;
+
     public OverlayWindow()
     {
         InitializeComponent();
         Placeholder.Text = Loc.Get("search_placeholder");
         NoResults.Text = Loc.Get("no_results");
         WindowSkin.Prepare(this, Panel);
+        _baseFont = (double)FindResource("Font.Row");
+        _baseSearch = (double)FindResource("Font.Search");
+        _baseHotkey = (double)FindResource("Font.Hotkey");
+        _baseNumber = (double)FindResource("Font.Number");
+        _baseRowHeight = (double)FindResource("Row.Height");
+        _baseSearchHeight = (double)FindResource("Search.Height");
+        _width = (double)FindResource("Overlay.Width");
+        _maxHeight = (double)FindResource("List.MaxHeight") + _baseSearchHeight + 1 + 14 + 2;
         Width += 2 * WindowSkin.ShadowMargin;
+        SizeChanged += OnSizeChanged;
         SourceInitialized += (_, _) =>
         {
             _hwnd = new WindowInteropHelper(this).Handle;
@@ -109,9 +129,75 @@ public partial class OverlayWindow : Window
         Refresh();
     }
 
-    public void ApplyLook(bool dark, WindowBackdrop backdrop, int nativeCornerPx)
+    public void ApplyLook(bool dark, WindowBackdrop backdrop, int nativeCornerPx, int customRadius = 0)
     {
-        WindowSkin.ApplyLook(_hwnd, dark, backdrop, nativeCornerPx);
+        WindowSkin.ApplyLook(_hwnd, dark, backdrop, nativeCornerPx, customRadius);
+    }
+
+    /// <summary>
+    /// Width, height limits and font size of the picker (overlay_width, overlay_min_height, overlay_max_height, overlay_font_size).
+    /// The font size scales the whole picker (rows, search line, numbers, hotkeys) in proportion. Applies at once to the resources;
+    /// the size takes effect the next time the picker opens.
+    /// </summary>
+    public void SetLayout(double width, double minHeight, double maxHeight, double fontSize)
+    {
+        _width = width;
+        _minHeight = minHeight;
+        _maxHeight = maxHeight;
+
+        var factor = fontSize / _baseFont;
+        var resources = Application.Current.Resources;
+        resources["Font.Row"] = fontSize;
+        resources["Font.Search"] = _baseSearch * factor;
+        resources["Font.Hotkey"] = _baseHotkey * factor;
+        resources["Font.Number"] = _baseNumber * factor;
+        resources["Row.Height"] = Math.Round(_baseRowHeight * factor);
+        resources["Search.Height"] = Math.Round(_baseSearchHeight * factor);
+    }
+
+    /// <summary>
+    /// Sizes the picker for the monitor of the anchor (never larger than the monitor minus the margin), places it and shows it
+    /// without activating it. With a fixed place the fixed edge is decided once for the maximum height, and the picker grows away
+    /// from the screen edge when the list gets longer; otherwise it opens near the text cursor or the mouse as before.
+    /// </summary>
+    public void ShowAnchored(Anchor anchor)
+    {
+        var shadow = WindowSkin.ShadowMargin;
+        var scale = anchor.Monitor.Scale;
+        var work = anchor.Monitor.WorkArea;
+        var innerWidth = Math.Min(_width, work.Width / scale - 2 * anchor.MarginDip - 2 * shadow);
+        var totalMax = Math.Min(_maxHeight + 2 * shadow, work.Height / scale - 2 * anchor.MarginDip);
+        var totalMin = Math.Min(_minHeight + 2 * shadow, totalMax);
+
+        // What is not the list: shadow, border, search line, separator, list padding.
+        var listPadding = (Thickness)FindResource("List.Padding");
+        var chrome = 2 * shadow + Panel.BorderThickness.Top + Panel.BorderThickness.Bottom
+            + (double)FindResource("Search.Height") + 1 + listPadding.Top + listPadding.Bottom;
+        List.MaxHeight = Math.Max((double)FindResource("Row.Height") + 2, totalMax - chrome);
+        List.MinHeight = Math.Max(0, totalMin - chrome);
+        Width = innerWidth + 2 * shadow;
+
+        var size = MeasureDesired();
+        _placementScale = scale;
+        if (anchor.Spot is { } spot)
+        {
+            var maxPx = (int)Math.Ceiling(totalMax * scale);
+            _placement = CardSpots.Place(spot, anchor.Monitor, (int)Math.Ceiling(Width * scale), maxPx, (int)Math.Round(anchor.MarginDip * scale));
+            _spotted = true;
+            ShowAt(_placement.X, _placement.TopFor((int)Math.Ceiling(size.Height * scale)));
+            return;
+        }
+
+        _spotted = false;
+        var (x, y) = anchor.PlaceWindow(size);
+        ShowAt(x, y);
+    }
+
+    // The list gets shorter or longer while the user types; a picker with a fixed edge stays attached to it.
+    private void OnSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        if (!_spotted || !IsVisible || _placement.Growth == CardGrowth.Down || e.HeightChanged is false) return;
+        WindowHelper.MoveTo(_hwnd, _placement.X, _placement.TopFor((int)Math.Ceiling(e.NewSize.Height * _placementScale)));
     }
 
     /// <summary>Desired size in device-independent units, for placement before the window is visible.</summary>

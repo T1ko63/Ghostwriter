@@ -59,6 +59,17 @@ public static class WindowHelper
         SetWindowLongPtr(hwnd, GWL_EXSTYLE, style);
     }
 
+    /// <summary>
+    /// The window property the Windhawk mod "Ghostwriter Blur" (corners) reads inside dwm.exe: the corner radius in px at 100% scaling,
+    /// plus one. It also marks the window as Ghostwriter's. A radius of 0 or less removes the property again.
+    /// </summary>
+    public static void SetCornerRadiusProperty(nint hwnd, int radius)
+    {
+        const string name = "Ghostwriter.CornerRadius";
+        if (radius > 0) _ = SetPropW(hwnd, name, radius + 1);
+        else _ = RemovePropW(hwnd, name);
+    }
+
     /// <summary>The system backdrop attribute exists from Windows 11 22H2 (build 22621).</summary>
     public static bool IsBackdropSupported { get; } = Environment.OSVersion.Version.Build >= 22621;
 
@@ -171,11 +182,12 @@ public static class WindowHelper
     /// Places a window of the given pixel size below (or, if that does not fit, above) an anchor point,
     /// kept inside the monitor's work area.
     /// </summary>
-    public static (int X, int Y) PlaceNear(ScreenPoint anchor, int anchorHeight, int widthPx, int heightPx, MonitorArea monitor)
+    public static (int X, int Y) PlaceNear(
+        ScreenPoint anchor, int anchorHeight, int widthPx, int heightPx, MonitorArea monitor, double marginDip = 8)
     {
         // Keep a small margin to the screen edge: a window sitting exactly on the edge looks cramped and,
         // as seen in testing, can go missing at the very edge of the monitor.
-        var margin = (int)Math.Round(8 * monitor.Scale);
+        var margin = (int)Math.Round(marginDip * monitor.Scale);
         var work = monitor.WorkArea;
         var minX = work.Left + margin;
         var maxX = Math.Max(minX, work.Right - widthPx - margin);
