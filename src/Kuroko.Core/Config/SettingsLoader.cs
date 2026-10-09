@@ -1,0 +1,332 @@
+using System.Net;
+using Kuroko.Core.Hotkeys;
+using Kuroko.Core.Providers;
+using Tomlyn;
+using Tomlyn.Model;
+
+namespace Kuroko.Core.Config;
+
+/// <summary>Reads and validates settings.toml. Never throws for bad content: problems come back as <see cref="ConfigIssue"/>s.</summary>
+public static class SettingsLoader
+{
+    public const string FileName = "settings.toml";
+
+    private static readonly string[] Themes = ["system", "light", "dark"];
+    private static readonly string[] Positions = ["caret", "mouse", "fixed", "center"]; // "center" is the old name of "fixed"
+    private static readonly string[] ResultPositions = ["fixed", "follow", "caret", "mouse", "center"]; // "center" is the old name of "fixed"
+
+    /// <summary>The places the result card can have (result_fixed_position).</summary>
+    public static readonly string[] ResultSpots =
+    [
+        "top-third", "center", "bottom-third", "top-left", "bottom-left", "top-right", "bottom-right", "left", "right", "top", "bottom",
+    ];
+    private static readonly string[] Languages = ["auto", "de", "en"];
+    private static readonly string[] Reasonings = ["off", "default", "low", "medium", "high"];
+
+    private static readonly HashSet<string> TopLevelKeys = new(StringComparer.Ordinal)
+    {
+        "overlay_hotkey", "marker_start", "marker_end", "theme", "autostart", "overlay_position", "language",
+        "idle_trim_seconds", "default_provider", "providers", "accent", "undo_hotkey", "undo_history",
+        "appearance", "result_copy_hotkey", "result_position", "result_font_size",
+        "result_width", "result_max_height", "result_min_height", "result_fixed_position", "result_screen_margin",
+        "overlay_fixed_position", "overlay_screen_margin", "overlay_width", "overlay_min_height", "overlay_max_height", "overlay_font_size",
+    };
+
+    private static readonly HashSet<string> ProviderKeys = new(StringComparer.Ordinal)
+    {
+        "type", "base_url", "model", "api_key", "api_key_env", "timeout_seconds", "reasoning", "max_output_tokens",
+    };
+
+    public static SettingsLoadResult Parse(string toml, Func<string, string?> getEnv)
+    {
+        var issues = new List<ConfigIssue>();
+
+        TomlTable root;
+        try
+        {
+            root = TomlSerializer.Deserialize<TomlTable>(toml) ?? new TomlTable();
+        }
+        catch (TomlException ex)
+        {
+            // Syntax error: the caller keeps the last working configuration.
+            issues.Add(new ConfigIssue(FileName, ex.Line > 0 ? ex.Line : null, ex.Message, IsError: true));
+            return new SettingsLoadResult(null, issues);
+        }
+
+        var reader = new TomlReader(FileName, toml, issues);
+        reader.WarnAboutDuplicateKeys();
+
+        foreach (var key in root.Keys.Where(k => !TopLevelKeys.Contains(k)))
+        {
+            reader.Issue(reader.LineOf(key), $"unknown setting '{key}'", isError: false);
+        }
+
+        var overlayHotkey = ReadHotkey(root, reader, "overlay_hotkey", AppSettings.DefaultOverlayHotkey);
+
+        var markerStart = reader.Choice(root, "marker_start", "<<", null);
+        var markerEnd = reader.Choice(root, "marker_end", ">>", null);
+        if (markerStart.Length == 0 || markerEnd.Length == 0)
+        {
+            reader.Issue(reader.LineOf("marker_start"), "marker_start and marker_end must not be empty", isError: true);
+        }
+
+        var undoHotkey = ReadHotkey(root, reader, "undo_hotkey", AppSettings.DefaultUndoHotkey);
+        var undoHistory = reader.Int(root, "undo_history", AppSettings.DefaultUndoHistory);
+        if (undoHistory is < 0 or > AppSettings.MaxUndoHistory)
+        {
+            reader.Issue(reader.LineOf("undo_history"), $"undo_history must be between 0 and {AppSettings.MaxUndoHistory} (0 = off)", isError: true);
+        }
+
+        var resultCopyHotkey = ReadHotkey(root, reader, "result_copy_hotkey", AppSettings.DefaultResultCopyHotkey);
+        if (HotkeyGesture.TryParse(resultCopyHotkey, out var copyGesture, out _) && CollidesWithCapture(copyGesture))
+        {
+            // The app itself sends exactly these keys to read the selection; RegisterHotKey would also catch those.
+            reader.Issue(reader.LineOf("result_copy_hotkey"),
+                $"result_copy_hotkey: {copyGesture} is used by the app to read the selection (Ctrl+C, Ctrl+A, Ctrl+V); choose another hotkey", isError: true);
+        }
+
+        var resultPosition = reader.Choice(root, "result_position", AppSettings.DefaultResultPosition, ResultPositions);
+        if (resultPosition == "center") resultPosition = "fixed";
+        var resultFixedPosition = reader.Choice(root, "result_fixed_position", AppSettings.DefaultResultFixedPosition, ResultSpots);
+        var resultScreenMargin = ReadNumber(root, reader, "result_screen_margin", AppSettings.DefaultResultScreenMargin, AppSettings.MinResultScreenMargin, AppSettings.MaxResultScreenMargin);
+        var resultMinHeight = ReadNumber(root, reader, "result_min_height", AppSettings.DefaultResultMinHeight, AppSettings.MinResultMinHeight, AppSettings.MaxResultMinHeight);
+        var resultFontSize = ReadNumber(root, reader, "result_font_size", AppSettings.DefaultResultFontSize, AppSettings.MinResultFontSize, AppSettings.MaxResultFontSize);
+        var resultWidth = ReadNumber(root, reader, "result_width", AppSettings.DefaultResultWidth, AppSettings.MinResultWidth, AppSettings.MaxResultWidth);
+        var resultMaxHeight = ReadNumber(root, reader, "result_max_height", AppSettings.DefaultResultMaxHeight, AppSettings.MinResultMaxHeight, AppSettings.MaxResultMaxHeight);
+        if (resultMinHeight > resultMaxHeight)
+        {
+            reader.Issue(reader.LineOf("result_min_height"), "result_min_height must not be larger than result_max_height", isError: true);
+        }
+
+        var theme = reader.Choice(root, "theme", "system", Themes);
+        var accent = reader.Choice(root, "accent", "none", null).Trim();
+        if (!IsValidAccent(accent))
+        {
+            reader.Issue(reader.LineOf("accent"), "accent must be \"none\", \"system\" or a hex colour like \"#3B82F6\"", isError: true);
+        }
+
+        var position = reader.Choice(root, "overlay_position", "caret", Positions);
+        if (position == "center") position = "fixed";
+        var overlayFixedPosition = reader.Choice(root, "overlay_fixed_position", AppSettings.DefaultOverlayFixedPosition, ResultSpots);
+        var overlayScreenMargin = ReadNumber(root, reader, "overlay_screen_margin", AppSettings.DefaultOverlayScreenMargin, AppSettings.MinResultScreenMargin, AppSettings.MaxResultScreenMargin);
+        var overlayWidth = ReadNumber(root, reader, "overlay_width", AppSettings.DefaultOverlayWidth, AppSettings.MinOverlayWidth, AppSettings.MaxOverlayWidth);
+        var overlayMinHeight = ReadNumber(root, reader, "overlay_min_height", AppSettings.DefaultOverlayMinHeight, 0, AppSettings.MaxOverlayHeight);
+        var overlayMaxHeight = ReadNumber(root, reader, "overlay_max_height", AppSettings.DefaultOverlayMaxHeight, AppSettings.MinOverlayMaxHeight, AppSettings.MaxOverlayHeight);
+        var overlayFontSize = ReadNumber(root, reader, "overlay_font_size", AppSettings.DefaultOverlayFontSize, AppSettings.MinResultFontSize, AppSettings.MaxResultFontSize);
+        if (overlayMinHeight > overlayMaxHeight)
+        {
+            reader.Issue(reader.LineOf("overlay_min_height"), "overlay_min_height must not be larger than overlay_max_height", isError: true);
+        }
+        var language = reader.Choice(root, "language", "auto", Languages);
+        var autostart = reader.Bool(root, "autostart", false);
+        var idleTrim = reader.Int(root, "idle_trim_seconds", AppSettings.DefaultIdleTrimSeconds);
+        if (idleTrim < 0)
+        {
+            reader.Issue(reader.LineOf("idle_trim_seconds"), "idle_trim_seconds must not be negative (0 = never)", isError: true);
+        }
+
+        var appearance = AppearanceLoader.Read(root, reader);
+
+        var providers = new Dictionary<string, ProviderSettings>(StringComparer.OrdinalIgnoreCase);
+        if (root.TryGetValue("providers", out var providersValue))
+        {
+            if (providersValue is TomlTable providerTable)
+            {
+                foreach (var (name, value) in providerTable)
+                {
+                    if (value is not TomlTable table)
+                    {
+                        reader.Issue(reader.LineOf(name), $"providers.{name} must be a table ([providers.{name}])", isError: true);
+                        continue;
+                    }
+
+                    if (providers.ContainsKey(name))
+                    {
+                        reader.Issue(reader.LineOf(name), $"provider name '{name}' is used twice (names are not case-sensitive)", isError: true);
+                        continue;
+                    }
+
+                    if (ReadProvider(name, table, reader, getEnv) is { } provider) providers[name] = provider;
+                }
+            }
+            else
+            {
+                reader.Issue(reader.LineOf("providers"), "providers must contain tables ([providers.name])", isError: true);
+            }
+        }
+
+        var defaultProvider = reader.Choice(root, "default_provider", string.Empty, null);
+        if (defaultProvider.Length == 0)
+        {
+            defaultProvider = providers.Keys.FirstOrDefault() ?? string.Empty;
+        }
+        else if (!providers.ContainsKey(defaultProvider))
+        {
+            reader.Issue(reader.LineOf("default_provider"), $"default_provider '{defaultProvider}' is not defined under [providers.*]", isError: true);
+        }
+
+        if (providers.Count == 0)
+        {
+            reader.Issue(null, "no provider configured: add a [providers.name] section", isError: false);
+        }
+
+        var settings = new AppSettings(
+            overlayHotkey, markerStart, markerEnd, theme, autostart, position, language, idleTrim,
+            defaultProvider.Length == 0 ? null : defaultProvider, providers, accent.ToLowerInvariant(), undoHotkey, undoHistory,
+            resultCopyHotkey, resultPosition, resultFontSize, resultWidth, resultMaxHeight, resultMinHeight, resultFixedPosition, resultScreenMargin,
+            overlayFixedPosition, overlayScreenMargin, overlayWidth, overlayMinHeight, overlayMaxHeight, overlayFontSize)
+        {
+            Appearance = appearance,
+        };
+        return new SettingsLoadResult(issues.Any(i => i.IsError) ? null : settings, issues);
+    }
+
+    /// <summary>"none", "system" (case-insensitive) or #RGB / #RRGGBB / #AARRGGBB.</summary>
+    public static bool IsValidAccent(string accent)
+        => accent.Equals("none", StringComparison.OrdinalIgnoreCase)
+           || accent.Equals("system", StringComparison.OrdinalIgnoreCase)
+           || ColorParser.TryParseAccentHex(accent, out _);
+
+    /// <summary>A whole number or a decimal (15 or 14.5) within [min, max]; anything else is an error and the default stays.</summary>
+    private static double ReadNumber(TomlTable root, TomlReader reader, string key, double fallback, double min, double max)
+    {
+        if (!root.TryGetValue(key, out var value)) return fallback;
+
+        double? number = value switch { long whole => whole, double fraction => fraction, _ => null };
+        if (number is { } n && n >= min && n <= max) return n;
+
+        reader.Issue(reader.LineOf(key), $"{key} must be a number between {min} and {max}", isError: true);
+        return fallback;
+    }
+
+    /// <summary>A key that belongs at the top of settings.toml (above the first [table]), e.g. result_font_size.</summary>
+    public static bool IsGeneralSetting(string key) => key != "providers" && key != "appearance" && TopLevelKeys.Contains(key);
+
+    /// <summary>Hint added to "unknown setting" when a general setting was written below a [table] header, where TOML puts it into that table.</summary>
+    public static string MisplacedHint(string key)
+        => IsGeneralSetting(key) ? " (this is a general setting: it must stand above the first [table] line of the file)" : string.Empty;
+
+    /// <summary>Plain Ctrl+A / Ctrl+C / Ctrl+V: the keys the app simulates itself while reading or replacing text.</summary>
+    public static bool CollidesWithCapture(HotkeyGesture gesture)
+        => gesture.Modifiers == HotkeyModifiers.Ctrl && gesture.VirtualKey is 'A' or 'C' or 'V';
+
+    private static string ReadHotkey(TomlTable root, TomlReader reader, string key, string fallback)
+    {
+        var text = reader.Choice(root, key, fallback, null);
+        if (!HotkeyGesture.TryParse(text, out _, out var error))
+        {
+            reader.Issue(reader.LineOf(key), $"{key}: {error}", isError: true);
+        }
+
+        return text;
+    }
+
+    private static ProviderSettings? ReadProvider(string name, TomlTable table, TomlReader reader, Func<string, string?> getEnv)
+    {
+        // Lines are looked up inside this provider's own block, so an error in the third provider points at the third provider.
+        var block = reader.Block($"[providers.{name}]");
+        int? Line(string key) => block is { } b ? reader.LineOf(key, b.Start, b.End) ?? b.Start : reader.LineOf(name);
+        void Error(string key, string message) => reader.Issue(Line(key), $"[providers.{name}] {message}", isError: true);
+
+        foreach (var key in table.Keys.Where(k => !ProviderKeys.Contains(k)))
+        {
+            reader.Issue(Line(key), $"[providers.{name}] unknown setting '{key}'{MisplacedHint(key)}", isError: false);
+        }
+
+        var typeText = reader.Choice(table, "type", string.Empty, null, Line);
+        ProviderType? type = typeText switch
+        {
+            "openai" => ProviderType.OpenAi,
+            "gemini" => ProviderType.Gemini,
+            "anthropic" => ProviderType.Anthropic,
+            "openai-compatible" => ProviderType.OpenAiCompatible,
+            _ => null,
+        };
+        if (type is null)
+        {
+            Error("type", typeText.Length == 0
+                ? "type is missing (openai, gemini, anthropic or openai-compatible)"
+                : $"unknown type '{typeText}' (use openai, gemini, anthropic or openai-compatible)");
+            return null;
+        }
+
+        var model = reader.Choice(table, "model", string.Empty, null, Line);
+        if (model.Length == 0)
+        {
+            Error("model", "model is missing");
+            return null;
+        }
+
+        var baseUrl = reader.Choice(table, "base_url", DefaultBaseUrl(type.Value), null, Line).TrimEnd('/');
+        var failed = false;
+        string? apiKey = table.TryGetValue("api_key", out var keyValue) ? keyValue as string : null;
+        var keyHasWrongType = keyValue is not null and not string;
+        if (keyHasWrongType)
+        {
+            // Stays a warning as before (the provider just has no key); only the message now names the real problem.
+            reader.Issue(Line("api_key"), $"[providers.{name}] api_key must be text (in quotes)", isError: false);
+        }
+
+        var keyEnvName = reader.Choice(table, "api_key_env", string.Empty, null, Line);
+        if (string.IsNullOrWhiteSpace(apiKey) && keyEnvName.Length > 0)
+        {
+            apiKey = getEnv(keyEnvName);
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                reader.Issue(Line("api_key_env"), $"[providers.{name}] environment variable {keyEnvName} is not set", isError: false);
+            }
+        }
+
+        apiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey.Trim();
+        if (apiKey is null && type != ProviderType.OpenAiCompatible && keyEnvName.Length == 0 && !keyHasWrongType)
+        {
+            reader.Issue(Line("api_key"), $"[providers.{name}] no api_key or api_key_env set", isError: false);
+        }
+
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+        {
+            Error("base_url", $"base_url '{baseUrl}' is not a valid http(s) address");
+            failed = true;
+        }
+        else if (uri.Scheme == "http" && apiKey is not null && !IsLocalAddress(uri))
+        {
+            // An API key must never travel unencrypted to a remote host.
+            Error("base_url", "base_url uses http:// for a remote host; use https:// when an API key is configured");
+            failed = true;
+        }
+
+        var timeout = reader.Int(table, "timeout_seconds", 30, Line);
+        if (timeout is < 1 or > 600)
+        {
+            Error("timeout_seconds", "timeout_seconds must be between 1 and 600");
+            failed = true;
+        }
+
+        var reasoning = reader.Choice(table, "reasoning", "off", Reasonings, Line);
+        var maxTokens = reader.Int(table, "max_output_tokens", 0, Line);
+        if (maxTokens < 0)
+        {
+            Error("max_output_tokens", "max_output_tokens must not be negative (0 = automatic)");
+            failed = true;
+        }
+
+        return failed ? null : new ProviderSettings(name, type.Value, baseUrl, model, apiKey, TimeSpan.FromSeconds(timeout), reasoning, maxTokens);
+    }
+
+    public static string DefaultBaseUrl(ProviderType type) => type switch
+    {
+        ProviderType.OpenAi => "https://api.openai.com/v1",
+        ProviderType.Gemini => "https://generativelanguage.googleapis.com/v1beta",
+        ProviderType.Anthropic => "https://api.anthropic.com",
+        _ => "http://localhost:11434/v1",
+    };
+
+    private static bool IsLocalAddress(Uri uri)
+    {
+        if (uri.IsLoopback || uri.Host.EndsWith(".local", StringComparison.OrdinalIgnoreCase) || !uri.Host.Contains('.')) return true;
+        if (!IPAddress.TryParse(uri.Host, out var ip)) return false;
+        var bytes = ip.GetAddressBytes();
+        return ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork
+            && (bytes[0] == 10 || (bytes[0] == 192 && bytes[1] == 168) || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31));
+    }
+}

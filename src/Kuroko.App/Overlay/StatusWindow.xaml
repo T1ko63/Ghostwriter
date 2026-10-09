@@ -1,0 +1,33 @@
+<Window x:Class="Kuroko.App.Overlay.StatusWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Kuroko Status"
+        SizeToContent="Height" Width="{StaticResource Status.MinWidth}"
+        WindowStyle="None" ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True" ShowActivated="False" Focusable="False"
+        Background="Transparent" Foreground="{DynamicResource TextBrush}"
+        FontFamily="{StaticResource Font.Family}" FontSize="{StaticResource Font.Status}"
+        TextOptions.TextFormattingMode="Ideal" UseLayoutRounding="True" SnapsToDevicePixels="True"
+        MouseLeftButtonUp="OnClick">
+
+    <Border x:Name="Panel" Background="{DynamicResource SurfaceBrush}">
+        <Grid x:Name="Root">
+            <TextBlock x:Name="Message" Margin="{StaticResource Status.Padding}" TextWrapping="Wrap"/>
+            <!-- Result card: replaces the message with the first piece of the answer (see StatusWindow.BeginResult). -->
+            <ScrollViewer x:Name="ResultScroll" Style="{StaticResource ResultScroller}" Visibility="Collapsed"
+                          VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False"
+                          PreviewMouseWheel="OnResultWheel" ScrollChanged="OnResultScrolled">
+                <StackPanel x:Name="ResultLines" Margin="{StaticResource Result.Padding}"/>
+            </ScrollViewer>
+            <!-- The progress line: a thin track with a chunk that runs across it while the AI works. -->
+            <Grid x:Name="Line" Height="{StaticResource Status.LineHeight}" Margin="{StaticResource Status.LineMargin}"
+                  VerticalAlignment="Bottom" ClipToBounds="True" Background="{DynamicResource SeparatorBrush}"
+                  IsHitTestVisible="False">
+                <Border x:Name="Chunk" HorizontalAlignment="Left" Background="{DynamicResource ProgressBrush}">
+                    <Border.RenderTransform>
+                        <TranslateTransform x:Name="ChunkShift"/>
+                    </Border.RenderTransform>
+                </Border>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

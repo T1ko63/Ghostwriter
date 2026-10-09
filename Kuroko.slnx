@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Kuroko.App/Kuroko.App.csproj" />
+    <Project Path="src/Kuroko.Core/Kuroko.Core.csproj" />
+    <Project Path="src/Kuroko.Platform/Kuroko.Platform.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Kuroko.Tests/Kuroko.Tests.csproj" />
+  </Folder>
+</Solution>

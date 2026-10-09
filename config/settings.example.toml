@@ -1,7 +1,7 @@
-# Ghostwriter - example settings.toml
+# Kuroko - example settings.toml
 #
 # Template with every key and its default value. The app does not read this file.
-# To use it, copy it to %APPDATA%\Ghostwriter\settings.toml and edit it.
+# To use it, copy it to %APPDATA%\Kuroko\settings.toml and edit it.
 # If that file is missing, the app creates one on first start.
 # Changes are applied as soon as the file is saved. If the file has an error, the last working
 # configuration stays active and a message names the file and line.

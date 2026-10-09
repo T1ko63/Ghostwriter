@@ -1,14 +1,14 @@
-# Builds a release version of Ghostwriter into publish\Ghostwriter (framework-dependent) or publish\Ghostwriter-selfcontained.
+# Builds a release version of Kuroko into publish\Kuroko (framework-dependent) or publish\Kuroko-selfcontained.
 #   powershell -File tools\publish.ps1                 # needs the .NET 10 Desktop Runtime on the target PC (small)
 #   powershell -File tools\publish.ps1 -SelfContained  # runs anywhere, ~150 MB
 # ReadyToRun pre-compiles the code, which is what makes the first hotkey fast after a cold start.
 param([switch]$SelfContained, [switch]$NoReadyToRun)
 
 $root = Split-Path -Parent $PSScriptRoot
-$name = if ($SelfContained) { 'Ghostwriter-selfcontained' } else { 'Ghostwriter' }
+$name = if ($SelfContained) { 'Kuroko-selfcontained' } else { 'Kuroko' }
 $out = Join-Path $root "publish\$name"
 
-dotnet publish (Join-Path $root 'src\Ghostwriter.App\Ghostwriter.App.csproj') `
+dotnet publish (Join-Path $root 'src\Kuroko.App\Kuroko.App.csproj') `
     -c Release -r win-x64 `
     --self-contained:$SelfContained `
     -p:PublishReadyToRun=$(-not $NoReadyToRun) `

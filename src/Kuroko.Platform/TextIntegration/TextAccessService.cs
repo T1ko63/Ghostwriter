@@ -1,0 +1,322 @@
+using System.Diagnostics;
+using Kuroko.Core.Diagnostics;
+using static Kuroko.Platform.Native.NativeMethods;
+
+namespace Kuroko.Platform.TextIntegration;
+
+/// <summary>
+/// Staged strategy:
+/// read  = (1) UI Automation selection, if the app exposes it; (2) Ctrl+C with a sentinel on the clipboard;
+///         (3) if nothing is selected, Ctrl+A then Ctrl+C (whole field).
+/// write = delayed-render clipboard + Ctrl+V, then the user's clipboard is restored. Replacing always goes
+///         through paste because UIA cannot replace a selection and ValuePattern would destroy formatting/undo.
+/// The user's text is only touched in the final paste; any failure before that leaves it untouched.
+/// </summary>
+public sealed class TextAccessService : ITextAccess
+{
+    private static readonly TimeSpan UiaBudget = TimeSpan.FromMilliseconds(150);
+    private static readonly TimeSpan CopyTimeout = TimeSpan.FromMilliseconds(450);
+    private static readonly TimeSpan CopyFollowUp = TimeSpan.FromMilliseconds(120);
+    private static readonly TimeSpan PasteTimeout = TimeSpan.FromMilliseconds(2000);
+    private static readonly TimeSpan PasteGrace = TimeSpan.FromMilliseconds(40);
+    private static readonly TimeSpan PasteGraceRemote = TimeSpan.FromMilliseconds(900);
+
+    private readonly ClipboardService _clipboard;
+
+    public TextAccessService(ClipboardService clipboard) => _clipboard = clipboard;
+
+    /// <summary>Pre-loads UI Automation in the background so the first hotkey is not slowed down by JIT/COM setup.</summary>
+    public static void Warmup() => UiaProbe.Warmup();
+
+    public async Task<FocusProbe> ProbeAsync(TargetInfo target)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var info = await UiaProbe.InspectAsync(target, UiaBudget);
+        AppLog.Info(info is null
+            ? $"UIA probe [{target.ProcessName}]: no answer ({Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms)"
+            : $"UIA probe [{target.ProcessName}]: {info.ControlType}, textPattern={info.HasTextPattern}, selectionKnown={info.SelectionKnown}, "
+              + $"selected={info.SelectedText?.Length ?? -1}, whole={info.WholeText?.Length ?? -1}, editable={info.IsEditable}, "
+              + $"readOnly={info.IsReadOnly}, tooLong={info.TooLong}, framework={info.FrameworkId}, class='{info.ElementClass}' "
+              + $"({Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms)");
+        return new FocusProbe(info);
+    }
+
+    public CaptureResult? PreCheck(TargetInfo? target, FocusProbe? probe, CaptureMode mode = CaptureMode.Replace)
+    {
+        if (target is null) return CaptureResult.Fail(CaptureFailure.NoTarget);
+        if (target.IsElevated && !TargetInfo.SelfIsElevated)
+        {
+            return CaptureResult.Fail(CaptureFailure.ElevatedTarget, target.ProcessName);
+        }
+
+        if (target.IsTerminal) return CaptureResult.Fail(CaptureFailure.UnsupportedApp, target.ProcessName);
+        if (target.IsWin32PasswordEdit || probe?.Info?.IsPassword == true) return CaptureResult.Fail(CaptureFailure.PasswordField);
+        if (CapturePolicy.RejectsReadOnly(mode) && (target.IsWin32ReadOnlyEdit || probe?.Info?.IsReadOnly == true))
+        {
+            return CaptureResult.Fail(CaptureFailure.ReadOnlyField);
+        }
+
+        return null;
+    }
+
+    public async Task<CaptureResult> CaptureAsync(
+        TargetInfo? target, ReadStrategy allowed, FocusProbe? probe = null,
+        CaptureMode mode = CaptureMode.Replace, CancellationToken ct = default)
+    {
+        var rejected = PreCheck(target, probe, mode);
+        if (rejected is not null) return rejected;
+        if (target is null) return CaptureResult.Fail(CaptureFailure.NoTarget); // unreachable: PreCheck rejects null
+
+        var stopwatch = Stopwatch.StartNew();
+        UiaFocusInfo? uia = null;
+        if (allowed.HasFlag(ReadStrategy.Uia))
+        {
+            probe ??= await ProbeAsync(target);
+            uia = probe.Info;
+            if (uia?.IsPassword == true) return CaptureResult.Fail(CaptureFailure.PasswordField);
+
+            if (uia?.IsReadOnly == true && CapturePolicy.RejectsReadOnly(mode)) return CaptureResult.Fail(CaptureFailure.ReadOnlyField);
+            if (uia?.TooLong == true) return CaptureResult.Fail(CaptureFailure.TooLong);
+
+            // A positive UIA answer is trusted; an empty one is not (many apps report "no selection" wrongly).
+            if (!string.IsNullOrEmpty(uia?.SelectedText))
+            {
+                return CaptureResult.Ok(new TextCapture(
+                    uia.SelectedText, TextOrigin.Selection, ReadStrategy.Uia, target, stopwatch.Elapsed)
+                {
+                    Element = uia.Element, // lets the replace step check that the selection is still there
+                    FocusElement = uia?.Element,
+                });
+            }
+
+            // UIA says "caret, no selection" in a field it can prove to be editable: trust that negative and read
+            // the field directly. This avoids a Ctrl+C probe that would wait out its full timeout for a copy that
+            // never comes. Fields that are not provably editable (documents, web pages) go through the clipboard.
+            // Not in web engines: there the focused "Edit" can be a hidden helper textarea (VS Code/VSCodium's
+            // Monaco) holding a fragment of the document, so "whole" would silently be only a few characters.
+            if (uia is { SelectionKnown: true, SelectedText.Length: 0, IsEditable: true, IsWebEngine: false })
+            {
+                return string.IsNullOrEmpty(uia.WholeText)
+                    ? CaptureResult.Fail(CaptureFailure.NoText)
+                    : CaptureResult.Ok(new TextCapture(
+                        uia.WholeText, TextOrigin.WholeField, ReadStrategy.Uia, target, stopwatch.Elapsed)
+                    {
+                        Element = uia.Element,
+                        FocusElement = uia.Element,
+                    });
+            }
+        }
+
+        if (!allowed.HasFlag(ReadStrategy.Clipboard)) return CaptureResult.Fail(CaptureFailure.NoText);
+
+        // Display mode never sends Ctrl+A (neither as "select all first" nor as fallback): with nothing selected it
+        // would select the whole page or leave a field fully selected. Without a selection the result is NoText.
+        var canSelectAll = CapturePolicy.AllowsSelectAll(mode, target.IsItemView, uia?.IsNonTextControl == true);
+
+        // Web-engine editor with a known empty selection: UIA cannot be trusted for the content, and a plain Ctrl+C
+        // without selection would copy just the current line in VS Code. Select all first, then copy.
+        var selectAllFirst = canSelectAll
+            && uia is { IsWebEngine: true, IsEditable: true, SelectionKnown: true, SelectedText.Length: 0 };
+        return await CaptureViaClipboardAsync(target, uia, canSelectAll, selectAllFirst, stopwatch, ct);
+    }
+
+    private async Task<CaptureResult> CaptureViaClipboardAsync(
+        TargetInfo target, UiaFocusInfo? uia, bool canSelectAll, bool selectAllFirst, Stopwatch stopwatch, CancellationToken ct)
+    {
+        if (!_clipboard.TrySnapshot(out var snapshot)) return CaptureResult.Fail(CaptureFailure.ClipboardBusy);
+        var clipboardStart = Stopwatch.GetTimestamp();
+        try
+        {
+            var origin = TextOrigin.Selection;
+            if (selectAllFirst)
+            {
+                if (!InputSimulator.CtrlChord(InputSimulator.VK_A)) return CaptureResult.Fail(CaptureFailure.InputBlocked);
+                origin = TextOrigin.WholeField;
+            }
+
+            var outcome = await CopyOnceAsync(ct);
+            if (outcome.Failure is { } failed) return CaptureResult.Fail(failed);
+
+            var text = outcome.Text;
+            if (text is null && !selectAllFirst)
+            {
+                if (!canSelectAll) return CaptureResult.Fail(CaptureFailure.NoText);
+
+                if (!InputSimulator.CtrlChord(InputSimulator.VK_A)) return CaptureResult.Fail(CaptureFailure.InputBlocked);
+                outcome = await CopyOnceAsync(ct);
+                if (outcome.Failure is { } failedAgain) return CaptureResult.Fail(failedAgain);
+                text = outcome.Text;
+                origin = TextOrigin.WholeField;
+            }
+
+            AppLog.Info($"clipboard read [{target.ProcessName}]: {Stopwatch.GetElapsedTime(clipboardStart).TotalMilliseconds:F0} ms, "
+                + $"selectAllFirst={selectAllFirst}, origin={origin}, chars={text?.Length ?? -1}");
+
+            if (text is { Length: > UiaProbe.MaxInputChars }) return CaptureResult.Fail(CaptureFailure.TooLong);
+
+            return string.IsNullOrEmpty(text)
+                ? CaptureResult.Fail(CaptureFailure.NoText)
+                : CaptureResult.Ok(new TextCapture(text, origin, ReadStrategy.Clipboard, target, stopwatch.Elapsed)
+                {
+                    FocusElement = uia?.Element,
+                });
+        }
+        finally
+        {
+            // Restore always, also on failure, so the user's clipboard never keeps our sentinel.
+            if (!_clipboard.TryRestore(snapshot)) AppLog.Warn("Could not restore the clipboard after reading.");
+        }
+    }
+
+    /// <summary>Text is null when nothing was copied; Failure is set when the copy could not even be attempted.</summary>
+    private readonly record struct CopyOutcome(string? Text, CaptureFailure? Failure = null);
+
+    /// <summary>
+    /// Puts a unique sentinel on the clipboard, sends Ctrl+C and waits for the clipboard to change.
+    /// Still the sentinel (or no change) means nothing was copied, i.e. nothing is selected.
+    /// </summary>
+    private async Task<CopyOutcome> CopyOnceAsync(CancellationToken ct)
+    {
+        var sentinel = "​" + Guid.NewGuid().ToString("N");
+        if (!_clipboard.TrySetText(sentinel, hidden: true)) return new CopyOutcome(null, CaptureFailure.ClipboardBusy);
+
+        var sequence = ClipboardService.SequenceNumber;
+        if (!InputSimulator.CtrlChord(InputSimulator.VK_C)) return new CopyOutcome(null, CaptureFailure.InputBlocked);
+
+        var deadline = Environment.TickCount64 + (long)CopyTimeout.TotalMilliseconds;
+        while (true)
+        {
+            var remaining = TimeSpan.FromMilliseconds(Math.Max(0, deadline - Environment.TickCount64));
+            if (!await _clipboard.WaitForChangeAsync(sequence, remaining, ct)) return new CopyOutcome(null);
+
+            sequence = ClipboardService.SequenceNumber;
+            var text = _clipboard.TryGetText();
+            if (!string.IsNullOrEmpty(text) && text != sentinel) return new CopyOutcome(text);
+
+            // Some apps clear first and fill in later (several updates); give them a short follow-up window.
+            deadline = Math.Min(deadline, Environment.TickCount64 + (long)CopyFollowUp.TotalMilliseconds);
+        }
+    }
+
+    private static readonly TimeSpan SelectBudget = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// Selects the whole field and proves it where possible: first through UIA (no keystroke), then with Ctrl+A.
+    /// Clipboard-read captures have no UIA element; there the Ctrl+A at read time already proved it worked.
+    /// </summary>
+    private static async Task<ReplaceFailure> SelectWholeFieldAsync(TextCapture capture)
+    {
+        var element = capture.Element;
+        if (element is not null)
+        {
+            if (await UiaProbe.SelectAllVerifiedAsync(element, capture.Text, SelectBudget)) return ReplaceFailure.None;
+
+            // UIA could not select (or not prove it): fall back to the keyboard and check again.
+            if (!InputSimulator.CtrlChord(InputSimulator.VK_A)) return ReplaceFailure.InputBlocked;
+            return await UiaProbe.WaitForSelectionAsync(element, capture.Text, SelectBudget)
+                ? ReplaceFailure.None
+                : ReplaceFailure.SelectAllFailed;
+        }
+
+        return InputSimulator.CtrlChord(InputSimulator.VK_A) ? ReplaceFailure.None : ReplaceFailure.InputBlocked;
+    }
+
+    private static readonly TimeSpan FieldCheckBudget = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>
+    /// True only when a check proves that the focus or the selection moved since the text was read. A check that
+    /// cannot tell (no UIA, too slow) does not block: then the behaviour is the same as without the check.
+    /// </summary>
+    private static async Task<bool> FieldChangedAsync(TextCapture capture)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var focusWindow = FocusWindowMatches(capture.Target);
+        bool? focusElement = null, selection = null;
+        if (focusWindow != false && capture.FocusElement is { } focused)
+        {
+            focusElement = await UiaProbe.HasFocusAsync(focused, FieldCheckBudget);
+        }
+
+        // A replaced selection must still be selected, or the result would land at the caret or over something else.
+        if (focusWindow != false && focusElement != false && capture.Origin == TextOrigin.Selection && capture.Element is { } element)
+        {
+            selection = await UiaProbe.SelectionStillAsync(element, capture.Text, FieldCheckBudget);
+        }
+
+        var changed = focusWindow == false || focusElement == false || selection == false;
+        AppLog.Info($"field check [{capture.Target.ProcessName}]: focusWindow={Show(focusWindow)}, focusElement={Show(focusElement)}, "
+            + $"selection={Show(selection)} -> {(changed ? "changed" : "ok")} ({Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms)");
+        return changed;
+
+        static string Show(bool? value) => value switch { true => "same", false => "moved", null => "-" };
+    }
+
+    /// <summary>Whether the focused child window is still the one from hotkey time; null when that cannot be told.</summary>
+    private static bool? FocusWindowMatches(TargetInfo target)
+    {
+        if (target.FocusWindow == 0) return null;
+        var info = new GUITHREADINFO { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<GUITHREADINFO>() };
+        if (!GetGUIThreadInfo(target.ThreadId, ref info) || info.hwndFocus == 0) return null;
+        return info.hwndFocus == target.FocusWindow;
+    }
+
+    public async Task<ReplaceResult> ReplaceAsync(TextCapture capture, string newText, CancellationToken ct = default)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        var target = capture.Target;
+
+        // The AI call can take seconds. Never paste into a different window, or a different field of the same
+        // window, than the one the text came from: with a whole-field capture Ctrl+A would wipe that other field.
+        if (GetForegroundWindow() != target.Window || await FieldChangedAsync(capture))
+        {
+            return new ReplaceResult(ReplaceFailure.TargetChanged, stopwatch.Elapsed);
+        }
+
+        // Fresh snapshot: the user may have copied something while the AI was working.
+        if (!_clipboard.TrySnapshot(out var snapshot)) return new ReplaceResult(ReplaceFailure.ClipboardBusy, stopwatch.Elapsed);
+        var snapshotMs = stopwatch.ElapsedMilliseconds;
+        long pasteSentMs = 0, renderedMs = 0;
+        try
+        {
+            var offer = _clipboard.TryOfferDelayed(newText);
+            if (offer is null) return new ReplaceResult(ReplaceFailure.ClipboardBusy, stopwatch.Elapsed);
+
+            // For a whole-field capture, make sure everything is selected before pasting over it. If that
+            // cannot be proven, nothing is pasted: otherwise the result would be inserted next to the old text.
+            if (capture.Origin == TextOrigin.WholeField)
+            {
+                var selected = await SelectWholeFieldAsync(capture);
+                if (selected != ReplaceFailure.None) return new ReplaceResult(selected, stopwatch.Elapsed);
+            }
+
+            // Last point at which a cancel is honoured; the finally block restores the clipboard.
+            ct.ThrowIfCancellationRequested();
+            if (!InputSimulator.CtrlChord(InputSimulator.VK_V))
+            {
+                return new ReplaceResult(ReplaceFailure.InputBlocked, stopwatch.Elapsed);
+            }
+
+            pasteSentMs = stopwatch.ElapsedMilliseconds;
+
+            // Once Ctrl+V is out, a cancel must not cut the wait short: the clipboard would be restored under a paste that
+            // may still be processed, and the target would paste the old clipboard content instead of the result.
+            var finished = await Task.WhenAny(offer.Rendered, Task.Delay(PasteTimeout, CancellationToken.None));
+            renderedMs = stopwatch.ElapsedMilliseconds;
+            if (finished != offer.Rendered)
+            {
+                return new ReplaceResult(ReplaceFailure.PasteNotAcknowledged, stopwatch.Elapsed);
+            }
+
+            // The target has asked for the data; give it a moment to finish reading before the clipboard changes again.
+            await Task.Delay(target.IsRemoteClient ? PasteGraceRemote : PasteGrace, CancellationToken.None);
+            return new ReplaceResult(ReplaceFailure.None, stopwatch.Elapsed);
+        }
+        finally
+        {
+            var beforeRestore = stopwatch.ElapsedMilliseconds;
+            if (!_clipboard.TryRestore(snapshot)) AppLog.Warn("Could not restore the clipboard after pasting.");
+            AppLog.Info($"replace timing: snapshot {snapshotMs} ms ({snapshot.FormatCount} formats, {snapshot.TotalBytes} B), "
+                + $"paste sent at {pasteSentMs} ms, render requested at {renderedMs} ms, restore {stopwatch.ElapsedMilliseconds - beforeRestore} ms");
+        }
+    }
+}

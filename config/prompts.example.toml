@@ -1,7 +1,7 @@
-# Ghostwriter - example prompts.toml
+# Kuroko - example prompts.toml
 #
 # Template with every key. The app does not read this file.
-# To use it, copy it to %APPDATA%\Ghostwriter\prompts.toml and add your own prompts.
+# To use it, copy it to %APPDATA%\Kuroko\prompts.toml and add your own prompts.
 # If that file is missing, the app creates one with the built-in prompts on first start.
 #
 # One [[prompt]] block per prompt:

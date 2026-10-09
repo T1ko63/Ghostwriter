@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- WPF framework reference is only needed for the managed UI Automation client (UIAutomationClient). -->
+    <UseWPF>true</UseWPF>
+    <RootNamespace>Kuroko.Platform</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Kuroko.Core\Kuroko.Core.csproj" />
+  </ItemGroup>
+
+</Project>

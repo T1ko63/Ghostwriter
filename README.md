@@ -1,4 +1,4 @@
-Ghostwriter
+Kuroko
 
 
 a lightweight, system-wide, keyboard-native AI text processing framework for Windows.

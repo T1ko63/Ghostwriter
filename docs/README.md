@@ -1,4 +1,4 @@
-# Ghostwriter
+# Kuroko
 
 Eigene KI-Prompts in **jedem** Textfeld unter Windows: Text markieren (oder einfach tippen), Hotkey drücken,
 Prompt wählen, das Ergebnis ersetzt den Text direkt im Feld. Kein Fensterwechsel, kein Kopieren und Einfügen.
@@ -57,7 +57,7 @@ schreibgeschützten Inhalten, aber auch für Analysen in einem Entwurf, ohne ihn
   (mit den `- `-Zeilen) in die Zwischenablage, zeigt kurz „Kopiert“ und schließt die Karte (erst wenn die Antwort vollständig ist). Beide
   Hotkeys sind nur registriert, solange eine Karte sichtbar ist; danach erreichen `Esc` und `Ctrl+Alt+C` wieder die anderen Apps.
 * Die Karte schließt auch, wenn ein anderes Fenster nach vorn kommt (ein laufender Lauf wird dann abgebrochen), bei einem Klick auf sie,
-  und wenn du einen anderen Hotkey von Ghostwriter drückst (dann beginnt der neue Lauf). Es gibt kein Zeitlimit.
+  und wenn du einen anderen Hotkey von Kuroko drückst (dann beginnt der neue Lauf). Es gibt kein Zeitlimit.
 * Ein Fehler mitten in der Antwort (Netz, Anbieter, Abbruch) ersetzt die Karte durch die Fehlerpille; es bleibt kein halbes Ergebnis stehen.
 * Die Karte schreibt nichts in die Rückgängig-Liste und berührt `Ctrl+Alt+Z` nicht.
 
@@ -86,20 +86,20 @@ Textcursor bzw. an der Maus. Es wächst vom Bildschirmrand weg, wenn die Liste b
 links die Ziffern zum Direktwählen. Hell/Dunkel folgt Windows (`theme`). Transparenz, Eckenradius, Blur und die drei Farben jedes
 Themes stehen im Block `[appearance]` der `settings.toml` (siehe unten); alle Nebenfarben (gedämpfter Text, Trennlinie, Scrollbar,
 Hover) werden aus der Textfarbe abgeleitet. `accent` färbt nur noch Textcursor, Textmarkierung und Fortschrittslinie, die Auswahlzeile
-bestimmt `selection`. Maße, Schriftgrößen und Abstände stehen weiter an einer Stelle: `src\Ghostwriter.App\Themes\Design.xaml`.
+bestimmt `selection`. Maße, Schriftgrößen und Abstände stehen weiter an einer Stelle: `src\Kuroko.App\Themes\Design.xaml`.
 
 **Tray-Menü:** Config-Ordner öffnen · Config neu laden · Mit Windows starten · Beenden.
 
 ## Konfiguration
 
-Beim ersten Start entstehen in `%APPDATA%\Ghostwriter\` (oder dem Ordner aus `GHOSTWRITER_CONFIG_DIR`) zwei Dateien
+Beim ersten Start entstehen in `%APPDATA%\Kuroko\` (oder dem Ordner aus `KUROKO_CONFIG_DIR`) zwei Dateien
 mit Kommentaren: `settings.toml` und `prompts.toml`. Änderungen werden nach dem Speichern **automatisch**
 übernommen, auch die Hotkeys. Bei einem Fehler in einer Datei bleibt die letzte funktionierende Version aktiv, und
 eine Meldung nennt Datei und Zeile.
 
 Vollständige Vorlagen mit allen Schlüsseln, Standardwerten und kurzen Kommentaren liegen im Repository unter
 [`config/settings.example.toml`](config/settings.example.toml) und [`config/prompts.example.toml`](config/prompts.example.toml).
-Zum Verwenden nach `%APPDATA%\Ghostwriter\` kopieren und `.example` aus dem Namen entfernen. Die Vorlagen enthalten keine
+Zum Verwenden nach `%APPDATA%\Kuroko\` kopieren und `.example` aus dem Namen entfernen. Die Vorlagen enthalten keine
 API-Schlüssel; Schlüssel am besten per `api_key_env` aus einer Umgebungsvariable lesen und nie ins Repository einchecken.
 
 ### settings.toml (Auszug)
@@ -165,13 +165,13 @@ selection  = "#40000000"
   `acrylic` = Windows-11-Acrylic (Blur mit Rauschen und Systemtönung, DWM-Material), `blur` = schlichter „Blur behind“ ohne eigene Tönung
   (über die undokumentierte `SetWindowCompositionAttribute`-Schnittstelle; die durchsichtigste Variante), `mica` = Windows-11-Mica,
   `micaalt` = Mica Alt (kräftigere, dunklere Tönung), `none` = kein Blur, die Fläche liegt mit der eingestellten Transparenz direkt über
-  dem Hintergrund. Auf Systemen ohne Windows-11-Unterstützung (oder mit `GHOSTWRITER_BACKDROP=off`) gibt es immer eine halbtransparente
+  dem Hintergrund. Auf Systemen ohne Windows-11-Unterstützung (oder mit `KUROKO_BACKDROP=off`) gibt es immer eine halbtransparente
   einfarbige Fläche ohne Blur. Acrylic, Blur und Mica(Alt) werden von Windows erst gezeichnet, wenn das Fenster aktiv ist; die App setzt
   sie deshalb nach dem Aktivieren neu (für etwa 10 ms steht beim Öffnen kurz eine flache Fläche).
 * **Mica und Mica Alt sind nicht durchsichtig:** Sie nehmen nur die Farbe des Desktop-Hintergrunds auf. `transparency` mischt dort nur die
   Tönung zwischen `background` (0) und reinem Mica (100); es scheint nichts durch. Die Status-Pille ist nie aktiv und zeigt bei Mica
   eine einfarbige Ersatzfläche.
-* **custom_corners:** Mit `true` fordert die App den exakten Radius auch bei den Windows-Materialien an: Sie zeichnet den Rand mit dem echten Radius und gibt ihn an den Windhawk-Mod `ghostwriter-blur` weiter, dessen Teil "Ecken" (Schalter *Enable rounded corners*) in `dwm.exe` den Radius statt 0, 4 oder 8 px verwendet. Ohne laufenden Mod rundet Windows weiter selbst, der Rand der App passt dann nicht ganz dazu. Blur (für `blur = "none"`) und Ecken sind im Mod getrennt schaltbar.
+* **custom_corners:** Mit `true` fordert die App den exakten Radius auch bei den Windows-Materialien an: Sie zeichnet den Rand mit dem echten Radius und gibt ihn an den Windhawk-Mod `kuroko-blur` weiter, dessen Teil "Ecken" (Schalter *Enable rounded corners*) in `dwm.exe` den Radius statt 0, 4 oder 8 px verwendet. Ohne laufenden Mod rundet Windows weiter selbst, der Rand der App passt dann nicht ganz dazu. Blur (für `blur = "none"`) und Ecken sind im Mod getrennt schaltbar.
 * **radius:** Windows schneidet das Fenster bei Acrylic, Blur und Mica selbst zu und kennt nur 0, 4 und 8 px; der Wert rastet dort auf die
   nächste dieser Stufen ein. Bei `none` und im Fallback gilt der Radius exakt. Die Ecken der Zeilen-Hervorhebung sind aus `radius`
   abgeleitet (etwa 60 %).
@@ -210,7 +210,7 @@ Voraussetzung: .NET 10 SDK (Windows).
 ```powershell
 dotnet build                       # Debug
 dotnet test                        # Unit-Tests (Marker, Config, Provider mit simuliertem Server, ...)
-powershell -File tools\publish.ps1 # Release mit ReadyToRun nach publish\Ghostwriter
+powershell -File tools\publish.ps1 # Release mit ReadyToRun nach publish\Kuroko
 powershell -File tools\publish.ps1 -SelfContained   # läuft ohne installierte .NET-Runtime (~130 MB)
 ```
 
@@ -220,10 +220,10 @@ Das Icon wird mit `tools\make-icon.ps1` erzeugt.
 
 | Projekt | Inhalt |
 |---|---|
-| `Ghostwriter.Core` | UI-frei: Prompt-Engine, Marker-Parser, Provider-Adapter (HttpClient + SSE), Konfiguration, Hot-Reload |
-| `Ghostwriter.Platform` | Win32: globale Hotkeys, Textzugriff (UI Automation und Zwischenablage), Tray, Fenster-Helfer, Autostart |
-| `Ghostwriter.App` | WPF: Overlay, Status-Pille, Themes, Zusammenspiel (`AppController`) |
-| `Ghostwriter.Tests` | xUnit |
+| `Kuroko.Core` | UI-frei: Prompt-Engine, Marker-Parser, Provider-Adapter (HttpClient + SSE), Konfiguration, Hot-Reload |
+| `Kuroko.Platform` | Win32: globale Hotkeys, Textzugriff (UI Automation und Zwischenablage), Tray, Fenster-Helfer, Autostart |
+| `Kuroko.App` | WPF: Overlay, Status-Pille, Themes, Zusammenspiel (`AppController`) |
+| `Kuroko.Tests` | xUnit |
 
 **Textzugriff, gestuft:** (1) UI Automation für die Markierung, ohne die Zwischenablage anzufassen; (2) Strg+C mit
 Marker-Text als Erkennung; (3) ohne Markierung das ganze Feld (nicht bei Overlay-Ausgabe: dort nie Strg+A, siehe oben). Ersetzt wird per Strg+V; die Zwischenablage des Nutzers
@@ -242,8 +242,8 @@ Während die Antwort noch läuft, wird der Kopier-Hotkey ignoriert (kein halbes 
 
 ## Fehlersuche
 
-* **Log:** `ghostwriter.log` im Config-Ordner (enthält nur Längen und Zeiten, nie Texte oder Schlüssel).
-* **Hotkey reagiert nicht:** Wenn eine andere App ihn belegt, meldet Ghostwriter das beim Start/Neuladen. Anderen Hotkey wählen.
+* **Log:** `kuroko.log` im Config-Ordner (enthält nur Längen und Zeiten, nie Texte oder Schlüssel).
+* **Hotkey reagiert nicht:** Wenn eine andere App ihn belegt, meldet Kuroko das beim Start/Neuladen. Anderen Hotkey wählen.
 * **„API-Schlüssel fehlt":** `api_key` oder `api_key_env` im Provider-Block setzen; Umgebungsvariablen werden beim
   Start gelesen (nach dem Setzen der Variable die App neu starten oder „Config neu laden").
 
@@ -251,11 +251,11 @@ Während die Antwort noch läuft, wird der Kopier-Hotkey ignoriert (kein halbes 
 
 | Variable | Wirkung |
 |---|---|
-| `GHOSTWRITER_CONFIG_DIR` | anderer Config-Ordner (Tests); die Einzelinstanz-Sperre gilt dann pro Ordner, so läuft eine zweite Kopie nebenher |
-| `GHOSTWRITER_THEME` | `light`/`dark`/`system`, überschreibt `settings.toml` |
-| `GHOSTWRITER_BACKDROP=off` | schaltet das Windows-11-Material ab (zeigt den Fallback wie auf Windows 10: halbtransparent, ohne Blur) |
-| `GHOSTWRITER_DIAG=1` | loggt alle 5 s Speicher und GC-Zahlen |
-| `GHOSTWRITER_TRIM_SECONDS=N` | überschreibt `idle_trim_seconds` |
+| `KUROKO_CONFIG_DIR` | anderer Config-Ordner (Tests); die Einzelinstanz-Sperre gilt dann pro Ordner, so läuft eine zweite Kopie nebenher |
+| `KUROKO_THEME` | `light`/`dark`/`system`, überschreibt `settings.toml` |
+| `KUROKO_BACKDROP=off` | schaltet das Windows-11-Material ab (zeigt den Fallback wie auf Windows 10: halbtransparent, ohne Blur) |
+| `KUROKO_DIAG=1` | loggt alle 5 s Speicher und GC-Zahlen |
+| `KUROKO_TRIM_SECONDS=N` | überschreibt `idle_trim_seconds` |
 
 ## Messwerte (Release, ReadyToRun, Windows 11, `gemini-2.5-flash`)
 
