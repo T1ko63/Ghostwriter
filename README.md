@@ -1,4 +1,4 @@
-#  黒子 Kuroko 黒子
+#  黒 Kuroko 子
 
 Designed to be invisible, engineered to be everywhere
 
