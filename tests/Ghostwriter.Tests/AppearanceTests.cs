@@ -211,7 +211,7 @@ public class AppearanceLoaderTests
     }
 
     [Theory]
-    [InlineData("radius = 33")]
+    [InlineData("radius = 101")]
     [InlineData("radius = -2")]
     [InlineData("radius = \"big\"")]
     public void A_radius_out_of_range_is_reported_and_replaced_by_the_default(string line)

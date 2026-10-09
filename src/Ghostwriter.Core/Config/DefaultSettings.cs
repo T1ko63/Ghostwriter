@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace Ghostwriter.Core.Config;
 
 /// <summary>The settings.toml written on first start.</summary>
@@ -12,7 +14,7 @@ public static class DefaultSettings
             : Has("OPENAI_API_KEY") ? "openai"
             : "gemini";
 
-        return $$"""
+        return string.Create(CultureInfo.InvariantCulture, $$"""
             # Ghostwriter - Einstellungen. Änderungen werden nach dem Speichern automatisch übernommen (auch Hotkeys).
             # Bei einem Fehler in der Datei bleibt die letzte funktionierende Konfiguration aktiv und es erscheint eine Meldung.
             # Prompts stehen in prompts.toml.
@@ -140,7 +142,7 @@ public static class DefaultSettings
             type = "openai-compatible"
             base_url = "http://localhost:11434/v1"
             model = "llama3.2"
-            """;
+            """);
     }
 
     public static void EnsureExists(string path, Func<string, string?> getEnv)
