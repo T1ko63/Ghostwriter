@@ -45,6 +45,8 @@ public static class Loc
             "Kuroko is running. Open the overlay with {0}. Settings: tray icon → Open config folder."),
         ["hint_no_key"] = ("Für „{0}“ fehlt der API-Schlüssel (settings.toml).", "The API key for \"{0}\" is missing (settings.toml)."),
         ["hint_no_provider"] = ("Kein KI-Anbieter eingerichtet (settings.toml).", "No AI provider set up (settings.toml)."),
+        ["legacy_running"] = ("Ghostwriter (der alte Name von Kuroko) läuft noch. Bitte Ghostwriter über das Tray-Symbol beenden und Kuroko dann neu starten; Einstellungen und Prompts werden dabei übernommen.",
+            "Ghostwriter (the old name of Kuroko) is still running. Please quit Ghostwriter from its tray icon, then start Kuroko again; settings and prompts are taken over."),
         ["autostart_failed"] = ("Autostart konnte nicht geändert werden.", "Autostart could not be changed."),
         ["tray_autostart"] = ("Mit Windows starten", "Start with Windows"),
         ["tray_open_config"] = ("Config-Ordner öffnen", "Open config folder"),

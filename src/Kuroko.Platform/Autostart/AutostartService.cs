@@ -17,8 +17,15 @@ public sealed class AutostartService
     /// </summary>
     public const string DefaultValueName = "Kuroko (Claude)";
 
-    /// <summary>The entry written under the old product name; removed so the old exe does not start alongside.</summary>
-    private const string LegacyValueName = "InstaPrompt (Claude)";
+    /// <summary>The entries written under the old product names; removed so the old exe does not start alongside.</summary>
+    private static readonly string[] LegacyValueNames = ["Ghostwriter (Claude)", "InstaPrompt (Claude)"];
+
+    /// <summary>
+    /// Older InstaPrompt builds registered under the bare name. Only removed when it starts an InstaPrompt.exe; a bare
+    /// "Ghostwriter" entry is left alone, because other tools of that name use it.
+    /// </summary>
+    private const string BareLegacyValueName = "InstaPrompt";
+    private const string BareLegacyExeName = "InstaPrompt.exe";
 
     public AutostartService(string valueName = DefaultValueName) => _valueName = valueName;
 
@@ -27,6 +34,39 @@ public sealed class AutostartService
     {
         using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath);
         return key?.GetValue(_valueName) as string;
+    }
+
+    /// <summary>
+    /// Removes the autostart entries of the old product names (Ghostwriter, InstaPrompt), whatever the autostart setting,
+    /// so the old exe no longer starts with Windows. Only for the default entry name; never throws.
+    /// </summary>
+    public void RemoveLegacyEntries()
+    {
+        if (_valueName != DefaultValueName) return;
+
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true);
+            if (key is null) return;
+
+            foreach (var name in LegacyValueNames)
+            {
+                if (key.GetValue(name) is null) continue;
+                key.DeleteValue(name, throwOnMissingValue: false);
+                AppLog.Info($"Old autostart entry \"{name}\" removed.");
+            }
+
+            if (key.GetValue(BareLegacyValueName) is string command
+                && command.Contains(BareLegacyExeName, StringComparison.OrdinalIgnoreCase))
+            {
+                key.DeleteValue(BareLegacyValueName, throwOnMissingValue: false);
+                AppLog.Info($"Old autostart entry \"{BareLegacyValueName}\" removed.");
+            }
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or System.Security.SecurityException or IOException)
+        {
+            AppLog.Error("Old autostart entries could not be removed.", ex);
+        }
     }
 
     /// <summary>
@@ -39,12 +79,6 @@ public sealed class AutostartService
         {
             using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath, writable: true);
             var current = key.GetValue(_valueName) as string;
-
-            if (_valueName == DefaultValueName && key.GetValue(LegacyValueName) is not null)
-            {
-                key.DeleteValue(LegacyValueName, throwOnMissingValue: false);
-                AppLog.Info("Old InstaPrompt autostart entry removed.");
-            }
 
             if (!enabled)
             {

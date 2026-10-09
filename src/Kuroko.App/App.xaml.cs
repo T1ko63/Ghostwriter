@@ -37,22 +37,19 @@ public partial class App : Application
     private TrayIcon? _tray;
     private ThemeService? _theme;
 
-    /// <summary>One-time move of the config folder from the old product name (%APPDATA%\InstaPrompt) to the new one.</summary>
-    /// <returns>A line for the log (written once the log is open), or null if there was nothing to do.</returns>
-    private static string? MigrateLegacyConfigDir(string legacyDir, string newDir)
+    /// <summary>Single-instance locks of the builds under the old product names (Ghostwriter, InstaPrompt).</summary>
+    private static readonly string[] LegacyMutexNames =
+    [
+        @"Local\Ghostwriter.Claude.5c0e7a52-9f3b-4d86-8f41-2b6d1e0a9c37",
+        @"Local\InstaPrompt.Claude.5c0e7a52-9f3b-4d86-8f41-2b6d1e0a9c37",
+    ];
+
+    private static bool LegacyInstanceRunning() => LegacyMutexNames.Any(name =>
     {
-        try
-        {
-            if (!Directory.Exists(legacyDir) || Directory.Exists(newDir)) return null;
-            Directory.Move(legacyDir, newDir);
-            return $"Config folder moved from {legacyDir}.";
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // Never block startup over this; the app simply starts with fresh defaults in the new folder.
-            return $"Config folder could not be moved from {legacyDir} ({ex.GetType().Name}: {ex.Message}); starting with defaults.";
-        }
-    }
+        if (!Mutex.TryOpenExisting(name, out var mutex)) return false;
+        mutex.Dispose();
+        return true;
+    });
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -76,13 +73,30 @@ public partial class App : Application
 
         // KUROKO_CONFIG_DIR points the app at another folder (tests, or a second copy side by side).
         var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        _configDir = Environment.GetEnvironmentVariable("KUROKO_CONFIG_DIR")
-            ?? Path.Combine(appData, "Kuroko");
-        var migration = MigrateLegacyConfigDir(Path.Combine(appData, "InstaPrompt"), _configDir);
+        var customDir = Environment.GetEnvironmentVariable("KUROKO_CONFIG_DIR");
+        _configDir = customDir ?? Path.Combine(appData, "Kuroko");
+
+        IReadOnlyList<string> migration = [];
+        if (customDir is null)
+        {
+            // An old build that is still running holds its config folder and the same hotkeys: moving its files away now
+            // would leave both apps half configured, so Kuroko asks for the old one to be closed first.
+            if (LegacyInstanceRunning())
+            {
+                MessageBox.Show(Loc.Get("legacy_running"), "Kuroko", MessageBoxButton.OK, MessageBoxImage.Information);
+                Shutdown();
+                return;
+            }
+
+            migration = LegacyConfigMigration.Run(
+                _configDir, LegacyConfigMigration.LegacyFolderNames.Select(name => Path.Combine(appData, name)));
+        }
+
         AppLog.Init(_configDir);
         var started = Stopwatch.GetTimestamp();
         AppLog.Info($"Start, elevated={TargetInfo.SelfIsElevated}");
-        if (migration is not null) AppLog.Warn(migration);
+        foreach (var line in migration) AppLog.Warn(line);
+        _autostart.RemoveLegacyEntries();
         InstallCrashGuards();
 
         // UI Automation takes a while to load; start that right away on a pool thread, in parallel to everything below.
