@@ -2,7 +2,7 @@
 
 The lightweight, system-wide, keyboard-native AI text-processing framework
 
-<img width="320" height="320" alt="Screenshot 2026-10-08 074916" src="https://github.com/user-attachments/assets/6cbd501e-4fba-42eb-bd5e-9f23caae6523" />
+<img width="320" height="400" alt="Screenshot 2026-10-08 074916" src="https://github.com/user-attachments/assets/6cbd501e-4fba-42eb-bd5e-9f23caae6523" />
 
 ## Features
 
