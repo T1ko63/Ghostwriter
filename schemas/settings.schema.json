@@ -164,7 +164,13 @@
       "type": "string",
       "description": "Provider used when a prompt does not name one. Must exist under [providers.*]. Empty or missing: the first provider."
     },
-    "appearance": { "$ref": "#/definitions/appearance" },
+    "fallback_provider": {
+      "type": "string",
+      "default": "",
+      "description": "Provider tried once when a provider cannot be reached (no connection, 5xx, 429). Must exist under [providers.*]. Empty: off. Privacy: the text then goes to this provider. Not used by local providers (only their own fallback_provider applies) and never more than one step. A provider's own fallback_provider wins.",
+      "examples": ["local"]
+    },
+    "appearance":{ "$ref": "#/definitions/appearance" },
     "providers": {
       "type": "object",
       "description": "One [providers.<name>] block per provider. The name is free and is used by default_provider and by the provider key in prompts.toml.",
@@ -290,6 +296,10 @@
           "minimum": 0,
           "default": 0,
           "description": "0 = automatic."
+        },
+        "fallback_provider": {
+          "type": "string",
+          "description": "Provider tried once when this one cannot be reached (no connection, 5xx, 429). Wins over the global fallback_provider; \"\" = no fallback for this provider. Must name another provider under [providers.*]. Privacy: the text then goes to that provider."
         }
       }
     }

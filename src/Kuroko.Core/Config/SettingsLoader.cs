@@ -27,7 +27,7 @@ public static class SettingsLoader
     private static readonly HashSet<string> TopLevelKeys = new(StringComparer.Ordinal)
     {
         "overlay_hotkey", "marker_start", "marker_end", "theme", "autostart", "overlay_position", "language",
-        "idle_trim_seconds", "default_provider", "providers", "accent", "undo_hotkey", "undo_history",
+        "idle_trim_seconds", "default_provider", "fallback_provider", "providers", "accent", "undo_hotkey", "undo_history",
         "appearance", "result_copy_hotkey", "result_position", "result_font_size",
         "result_width", "result_max_height", "result_min_height", "result_fixed_position", "result_screen_margin",
         "overlay_fixed_position", "overlay_screen_margin", "overlay_width", "overlay_min_height", "overlay_max_height", "overlay_font_size",
@@ -35,7 +35,7 @@ public static class SettingsLoader
 
     private static readonly HashSet<string> ProviderKeys = new(StringComparer.Ordinal)
     {
-        "type", "base_url", "model", "api_key", "api_key_env", "timeout_seconds", "reasoning", "max_output_tokens",
+        "type", "base_url", "model", "api_key", "api_key_env", "timeout_seconds", "reasoning", "max_output_tokens", "fallback_provider",
     };
 
     /// <param name="getEnv">Reads an environment variable (api_key_env).</param>
@@ -157,6 +157,8 @@ public static class SettingsLoader
                 reader.Issue(reader.LineOf("providers"), "providers must contain tables ([providers.name])", isError: true);
             }
         }
+
+        ResolveFallbacks(root, providers, reader);
 
         var defaultProvider = reader.Choice(root, "default_provider", string.Empty, null);
         if (defaultProvider.Length == 0)
@@ -324,9 +326,77 @@ public static class SettingsLoader
             failed = true;
         }
 
+        // Missing: the global fallback_provider applies. Empty: this provider has no fallback. Checked against the other
+        // providers in ResolveFallbacks, once all of them are read.
+        string? fallback = table.ContainsKey("fallback_provider") ? reader.Choice(table, "fallback_provider", string.Empty, null, Line).Trim() : null;
+
         return failed ? null : new ProviderSettings(name, type.Value, baseUrl, model, apiKey, TimeSpan.FromSeconds(timeout), reasoning, maxTokens,
-            keySource, keyEnvName.Length > 0 ? keyEnvName : null);
+            keySource, keyEnvName.Length > 0 ? keyEnvName : null, fallback);
     }
+
+    /// <summary>
+    /// Sets the fallback provider each provider really uses: its own fallback_provider, otherwise the global one. The global
+    /// one is not used by local providers (a text meant to stay on the PC must not go out just because the local server is
+    /// down) nor by the global fallback provider itself; a local provider only falls back when its own block says so.
+    /// Only one step is ever taken (see <see cref="ProviderRegistry.GetFallback"/>), so A -> B -> A needs no cycle check.
+    /// </summary>
+    private static void ResolveFallbacks(TomlTable root, Dictionary<string, ProviderSettings> providers, TomlReader reader)
+    {
+        var known = providers.Count == 0 ? "none defined" : string.Join(", ", providers.Keys);
+
+        var global = reader.Choice(root, "fallback_provider", string.Empty, null).Trim();
+        if (global.Length > 0)
+        {
+            if (providers.TryGetValue(global, out var target))
+            {
+                global = target.Name; // the spelling of the [providers.*] header
+            }
+            else
+            {
+                reader.Issue(reader.LineOf("fallback_provider"), $"fallback_provider '{global}' is not defined under [providers.*] (defined: {known})", isError: true);
+                global = string.Empty;
+            }
+        }
+
+        foreach (var (name, provider) in providers.ToList())
+        {
+            string? effective;
+            if (provider.FallbackProvider is { } own)
+            {
+                var block = reader.Block($"[providers.{name}]");
+                var line = block is { } b ? reader.LineOf("fallback_provider", b.Start, b.End) ?? b.Start : reader.LineOf(name);
+                if (own.Length == 0)
+                {
+                    effective = null;
+                }
+                else if (own.Equals(name, StringComparison.OrdinalIgnoreCase))
+                {
+                    reader.Issue(line, $"[providers.{name}] fallback_provider must name another provider, not '{own}' itself", isError: true);
+                    continue;
+                }
+                else if (providers.TryGetValue(own, out var target))
+                {
+                    effective = target.Name;
+                }
+                else
+                {
+                    reader.Issue(line, $"[providers.{name}] fallback_provider '{own}' is not defined under [providers.*] (defined: {known})", isError: true);
+                    continue;
+                }
+            }
+            else
+            {
+                var usesGlobal = global.Length > 0 && !global.Equals(name, StringComparison.OrdinalIgnoreCase) && !IsLocalProvider(provider);
+                effective = usesGlobal ? global : null;
+            }
+
+            providers[name] = provider with { FallbackProvider = effective };
+        }
+    }
+
+    /// <summary>A provider whose server runs on this PC or in the local network (Ollama, LM Studio): the text stays local.</summary>
+    public static bool IsLocalProvider(ProviderSettings provider)
+        => Uri.TryCreate(provider.BaseUrl, UriKind.Absolute, out var uri) && IsLocalAddress(uri);
 
     public static string DefaultBaseUrl(ProviderType type) => type switch
     {

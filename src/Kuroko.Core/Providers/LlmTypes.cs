@@ -79,15 +79,33 @@ public sealed record ProviderSettings(
     string Reasoning = "off",
     int MaxOutputTokens = 0,
     ApiKeySource KeySource = ApiKeySource.None,
-    string? ApiKeyEnv = null)
+    string? ApiKeyEnv = null,
+    string? FallbackProvider = null)
 {
     // The generated ToString would print the key; it must never end up in a log or an exception text.
     private bool PrintMembers(System.Text.StringBuilder builder)
     {
         builder.Append($"Name = {Name}, Type = {Type}, BaseUrl = {BaseUrl}, Model = {Model}, ApiKey = {(ApiKey is null ? "null" : "***")}, ");
-        builder.Append($"Timeout = {Timeout}, Reasoning = {Reasoning}, MaxOutputTokens = {MaxOutputTokens}, KeySource = {KeySource}, ApiKeyEnv = {ApiKeyEnv}");
+        builder.Append($"Timeout = {Timeout}, Reasoning = {Reasoning}, MaxOutputTokens = {MaxOutputTokens}, KeySource = {KeySource}, ApiKeyEnv = {ApiKeyEnv}, ");
+        builder.Append($"FallbackProvider = {FallbackProvider}");
         return true;
     }
+}
+
+/// <summary>
+/// The first provider failed in a way another provider may not (no connection, server error, rate limit), so the request
+/// goes once more to <see cref="To"/>. The text then reaches a different provider than the prompt names.
+/// </summary>
+public sealed record ProviderFallback(string From, string To, LlmErrorKind Reason);
+
+/// <summary>When a failed request may be repeated with the fallback provider.</summary>
+public static class FallbackPolicy
+{
+    /// <summary>
+    /// Only failures that say nothing about the request itself: no connection, 5xx and 429. A rejected key or request (4xx),
+    /// a blocked or cut-off answer and a timeout (the user has already waited the full limit) are reported as they are.
+    /// </summary>
+    public static bool Applies(LlmErrorKind kind) => kind is LlmErrorKind.Network or LlmErrorKind.Server or LlmErrorKind.RateLimit;
 }
 
 /// <summary>One request to a model. Output limit and texts are decided by the caller.</summary>

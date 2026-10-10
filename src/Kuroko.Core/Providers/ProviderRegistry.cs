@@ -42,6 +42,17 @@ public sealed class ProviderRegistry : IDisposable
         }
     }
 
+    /// <summary>
+    /// The provider to try once when <paramref name="primary"/> cannot be reached, or null when none is configured. Only one
+    /// step: the fallback's own fallback is never followed, so a chain or a cycle in the config cannot cause a loop.
+    /// </summary>
+    public ILlmProvider? GetFallback(ProviderSettings primary)
+    {
+        var name = primary.FallbackProvider;
+        if (string.IsNullOrEmpty(name) || name.Equals(primary.Name, StringComparison.OrdinalIgnoreCase)) return null;
+        return _settings.ContainsKey(name) ? Get(name) : null;
+    }
+
     public static ILlmProvider Create(ProviderSettings settings, HttpClient http) => settings.Type switch
     {
         ProviderType.OpenAi => new OpenAiProvider(settings, http),

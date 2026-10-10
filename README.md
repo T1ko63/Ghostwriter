@@ -76,6 +76,10 @@ texts over 50,000 characters are not supported.
   go to that prompt’s provider, together with the model and output settings. No window titles, app names or other
   clipboard content. OpenAI requests are sent with `store = false`; Gemini requests always enable Google Search
   grounding. With a local OpenAI-compatible server (Ollama, LM Studio) the text never leaves your PC.
+* **Fallback provider** (`fallback_provider`, off by default): if the prompt’s provider cannot be reached (no
+  connection, 5xx, 429), the same text goes once to the fallback provider, so to a *different* provider than the
+  prompt names. The pill says so. Local providers ignore the global setting and only fall back when their own block
+  names a fallback.
 * **Without a prompt**, Kuroko sends one `HEAD` request to the default provider’s `base_url` at start, after a config
   change and when the overlay opens, so the connection is ready. It carries no text and no key.
 * **API keys** travel only in the request header, never in the URL, and never over plain `http://` to a remote host.

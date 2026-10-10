@@ -389,7 +389,12 @@ public sealed class AppController
 
             // The runner resolves universal prompts itself (marker or not); the whole captured text is replaced either way.
             var timings = new LlmTimings();
-            output = await _runner.RunAsync(prompt, capture.Text, cts.Token, timings);
+            ProviderFallback? fallback = null;
+            output = await _runner.RunAsync(prompt, capture.Text, cts.Token, timings, used =>
+            {
+                fallback = used;
+                OnUi(() => _status.UpdateProgress(Loc.Get("fallback_working", used.From, used.To), session.Anchor));
+            });
             _lastResult = output;
 
             var replaced = await Task.Run(() => _text.ReplaceAsync(capture, output, cts.Token));
@@ -402,7 +407,9 @@ public sealed class AppController
 
             // Remembered for the undo hotkey: what was there (marker block included) and what was put there. Memory only.
             History.Add(new ReplacementRecord(capture.Text, output, FieldOf(target)));
-            _status.HideStatus();
+            // The text went to another provider than the prompt names: say so instead of ending silently.
+            if (fallback is not null) _status.ShowInfo(Loc.Get("fallback_done", fallback.From, fallback.To), session.Anchor, longer: true);
+            else _status.HideStatus();
             var origin = hotkeyTimestamp ?? started;
             var since = hotkeyTimestamp.HasValue ? "hotkey" : "choice";
             AppLog.Info($"[{target.ProcessName}] '{prompt.Name}' ({prompt.Mode}) ok via {capture.UsedStrategy}/{capture.Origin}, "
@@ -451,6 +458,13 @@ public sealed class AppController
             _runCts = null;
             Busy = false;
         }
+    }
+
+    /// <summary>Runs on the UI thread: directly if already there, otherwise queued (the runner's callbacks do not promise a thread).</summary>
+    private void OnUi(Action action)
+    {
+        if (_status.Dispatcher.CheckAccess()) action();
+        else _status.Dispatcher.BeginInvoke(action);
     }
 
     // ---- last result ----
@@ -610,7 +624,12 @@ public sealed class AppController
 
             var timings = new LlmTimings();
             var pieces = 0;
-            await foreach (var piece in _runner.StreamAsync(prompt, capture.Text, cts.Token, timings))
+            void OnFallback(ProviderFallback used) => OnUi(() =>
+            {
+                if (ReferenceEquals(_runCts, cts)) _status.UpdateProgress(Loc.Get("fallback_working", used.From, used.To), session.Anchor);
+            });
+
+            await foreach (var piece in _runner.StreamAsync(prompt, capture.Text, cts.Token, timings, OnFallback))
             {
                 if (!ReferenceEquals(_runCts, cts)) return; // the card was closed or replaced: this run is obsolete
 

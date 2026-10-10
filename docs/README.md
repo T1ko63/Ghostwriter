@@ -201,6 +201,7 @@ result_max_height = 360     # maximale Höhe in px, 120-2000; darüber scrollt d
 autostart = false
 idle_trim_seconds = 90      # gibt nach Ruhe ungenutzten Speicher frei (0 = nie)
 default_provider = "gemini"
+fallback_provider = ""      # Ausweich-Anbieter, leer = aus (siehe „Ausweich-Anbieter“ unten)
 
 [appearance]                # Aussehen: siehe „Aussehen einstellen“ unten
 transparency = 50
@@ -213,6 +214,37 @@ model = "gemini-2.5-flash"
 api_key_env = "GEMINI_API_KEY"   # oder api_key = "..."
 reasoning = "off"           # off | default | low | medium | high
 ```
+
+### Ausweich-Anbieter (`fallback_provider`)
+
+Ist ein Anbieter gerade nicht erreichbar, kann Kuroko dieselbe Anfrage **einmal** an einen anderen Anbieter schicken,
+z. B. an das lokale Ollama-Modell. Standardmäßig ist das aus.
+
+```toml
+fallback_provider = "local"     # global: gilt für alle Anbieter ohne eigenen Wert
+
+[providers.anthropic]
+type = "anthropic"
+model = "claude-haiku-4-5"
+fallback_provider = "openai"    # nur für diesen Anbieter; gilt vor dem globalen Wert ("" = hier keiner)
+```
+
+* **Wann:** nur bei „keine Verbindung“, Serverfehler (5xx) und Rate-Limit (429), und nur bevor Text angekommen ist.
+  Ein abgelehnter Schlüssel oder eine abgelehnte Anfrage (4xx), eine blockierte oder abgeschnittene Antwort und eine
+  Zeitüberschreitung (da hast du schon die volle Zeit gewartet) werden wie bisher gemeldet. Nach `Esc` oder einem Klick
+  auf die Pille wird nichts mehr gesendet.
+* **Nur ein Schritt:** Scheitert auch der Ausweich-Anbieter, kommt dessen Fehlermeldung. Sein eigener
+  `fallback_provider` wird dabei nie befolgt, deshalb sind auch gegenseitige Einträge (A → B, B → A) erlaubt und
+  führen nie zu einer Schleife.
+* **Lokale Anbieter** (`base_url` auf `localhost`, im lokalen Netz oder ohne Punkt im Namen) nutzen den globalen Wert
+  nicht: Ein Text, der den Rechner nicht verlassen soll, geht nicht in die Cloud, nur weil Ollama gerade aus ist. Wer
+  das trotzdem will, trägt `fallback_provider` im Block des lokalen Anbieters ein.
+* **Modell:** Der Ausweich-Anbieter nutzt sein eigenes `model`; ein `model` aus dem Prompt gehört zum Anbieter des Prompts.
+* **Anzeige:** Die Pille zeigt während des Wartens „gemini nicht erreichbar, frage local …“. Nach dem Ersetzen meldet
+  sie kurz, von welchem Anbieter die Antwort kam.
+* **Prüfung:** Ein unbekannter Name oder ein Anbieter, der auf sich selbst zeigt, ist ein Config-Fehler mit Zeilenangabe.
+
+Was das für den Datenschutz heißt, steht unter [Datenschutz](#datenschutz).
 
 ### Aussehen einstellen (`[appearance]`)
 
@@ -285,7 +317,8 @@ zum Anbieter, der in `settings.toml` steht.
 
 **Was an den Anbieter geht, wenn du einen Prompt ausführst:** die Anweisung des Prompts und der erfasste Text (die
 Auswahl oder der Feldinhalt, höchstens 50.000 Zeichen), dazu Modell, Ausgabegrenze und gegebenenfalls die Reasoning-Einstellung. Sonst nichts: kein Fenstertitel,
-kein App-Name, kein sonstiger Inhalt der Zwischenablage. Ziel ist die `base_url` des Anbieters, den der Prompt verwendet.
+kein App-Name, kein sonstiger Inhalt der Zwischenablage. Ziel ist die `base_url` des Anbieters, den der Prompt verwendet (oder die des
+Ausweich-Anbieters, siehe unten).
 Was der Anbieter mit dem Text macht und wie lange er ihn aufbewahrt, regeln dessen eigene Bedingungen. Je Anbieter:
 
 * `openai`: Die Anfrage geht mit `store = false`, die Antwort wird also nicht im Antwortverlauf des Kontos gespeichert.
@@ -296,6 +329,12 @@ Was der Anbieter mit dem Text macht und wie lange er ihn aufbewahrt, regeln dess
 **Netzaufruf ohne Prompt:** Beim Start, nach einer Config-Änderung und beim Öffnen des Overlays schickt Kuroko ein
 `HEAD` an die `base_url` des Standard-Anbieters, damit die Verbindung beim eigentlichen Aufruf schon steht. Es enthält
 weder Text noch Schlüssel, nur die Kennung `Kuroko/1.0`.
+
+**Ausweich-Anbieter:** Ist `fallback_provider` gesetzt (standardmäßig aus) und der Anbieter des Prompts nicht
+erreichbar, geht derselbe Inhalt (Anweisung und erfasster Text) einmal an den Ausweich-Anbieter, also an einen
+**anderen Anbieter**, als der Prompt nennt, mit dessen Schlüssel und unter dessen Bedingungen. Die Pille zeigt das an.
+Lokale Anbieter schicken nur dann weiter, wenn ihr eigener Block es ausdrücklich sagt (siehe
+[Ausweich-Anbieter](#ausweich-anbieter-fallback_provider)).
 
 **Verbindungstest:** Nur wenn du im Tray „Verbindung testen“ wählst, geht eine echte Anfrage an den Standard-Anbieter, mit
 dem Schlüssel und dem festen Text „ping“ (höchstens 16 Ausgabe-Tokens). Text aus anderen Apps ist nicht dabei.

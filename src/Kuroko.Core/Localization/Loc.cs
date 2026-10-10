@@ -35,6 +35,8 @@ public static class Loc
         ["llm_truncated"] = ("{0}: Die Antwort war zu lang und wurde abgeschnitten. Der Text blieb unverändert.", "{0}: the answer was cut off. The text is unchanged."),
         ["llm_empty"] = ("{0}: Leere Antwort. Der Text blieb unverändert.", "{0}: empty answer. The text is unchanged."),
         ["llm_protocol"] = ("{0}: Unerwartete Antwort{1}. Der Text blieb unverändert.", "{0}: unexpected answer{1}. The text is unchanged."),
+        ["fallback_working"] = ("{0} nicht erreichbar, frage {1} …", "{0} unavailable, asking {1} …"),
+        ["fallback_done"] = ("Antwort von {1} ({0} war nicht erreichbar).", "Answer from {1} ({0} was unavailable)."),
         ["llm_config"] = ("Kein Anbieter eingerichtet: {0}", "No provider set up: {0}"),
         ["err_marker_unclosed"] = ("Marker {0} ohne schließendes {1}.", "Marker {0} without a closing {1}."),
         ["err_marker_empty"] = ("Der Marker enthält keine Anweisung.", "The marker contains no instruction."),

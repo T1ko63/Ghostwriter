@@ -82,6 +82,14 @@ public static class DefaultSettings
             # Anbieter, der verwendet wird, wenn ein Prompt keinen eigenen angibt.
             default_provider = "{{defaultProvider}}"
 
+            # Ausweich-Anbieter (leer = aus). Ist ein Anbieter nicht erreichbar (keine Verbindung, Serverfehler 5xx, Rate-Limit 429),
+            # geht dieselbe Anfrage einmal an diesen Anbieter, z. B. "local" für das Ollama-Modell unten.
+            # Datenschutz: Dein Text geht dann an diesen Anbieter statt an den des Prompts. Nicht nach Esc, nicht bei abgelehntem
+            # Schlüssel oder abgelehnter Anfrage (4xx) und nicht nach einer Zeitüberschreitung; nie mehr als ein Schritt.
+            # Lokale Anbieter nutzen ihn nicht (ihr Text bleibt auf dem Rechner), außer ihr eigener Block nennt einen.
+            # Pro Anbieter geht auch fallback_provider = "name" im Block [providers.name]; das gilt dann vor diesem Wert ("" = keiner).
+            fallback_provider = ""
+
             # Aussehen des Overlays. Fehlt ein Wert, gilt der hier gezeigte Standard. Ein ungültiger Wert wird gemeldet und durch den Standard ersetzt.
             # Gilt der Block des aktiven Themes (theme oben): [appearance.dark] oder [appearance.light].
             [appearance]

@@ -68,6 +68,13 @@ idle_trim_seconds = 90
 # Provider used when a prompt does not name one. Must exist under [providers.*].
 default_provider = "gemini"
 
+# Fallback provider (off when empty). If a provider cannot be reached (no connection, server error 5xx, rate limit 429),
+# the same request goes once to this provider, e.g. "local" for the Ollama model below. Privacy: your text then goes to
+# that provider instead of the one the prompt names. Not used after Esc, for rejected keys or requests (4xx) or timeouts,
+# never more than one step, and never by local providers (their text stays on the PC unless their own block says otherwise).
+# A provider block can override it with its own fallback_provider ("" = no fallback for that provider).
+fallback_provider = ""
+
 
 [appearance]
 transparency = 50           # 0-100 percent: 0 = opaque, 100 = fully transparent
@@ -101,6 +108,8 @@ selection  = "#40000000"
 #   timeout_seconds    optional, 1-600 (default 30)
 #   reasoning          optional: off | default | low | medium | high (default off)
 #   max_output_tokens  optional, 0 = automatic (default)
+#   fallback_provider  optional: provider to try once when this one cannot be reached; wins over the global
+#                      fallback_provider, "" = none for this provider (default: the global one)
 
 [providers.gemini]
 type = "gemini"

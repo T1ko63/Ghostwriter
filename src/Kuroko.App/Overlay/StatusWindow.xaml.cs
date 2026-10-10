@@ -154,6 +154,16 @@ public partial class StatusWindow : Window
         Present(text, anchor, showBar: true);
     }
 
+    /// <summary>
+    /// Changes the text of a progress pill that is still waiting (e.g. after a switch to the fallback provider). Does nothing
+    /// once the pill has ended or the result card shows text; a result-mode pill keeps its planned place.
+    /// </summary>
+    public void UpdateProgress(string text, Anchor anchor)
+    {
+        if (!_isProgress || _cardShown) return;
+        Present(text, _resultMode ? _anchor : anchor, showBar: true);
+    }
+
     public void ShowError(string text, Anchor anchor)
     {
         EndAction();
