@@ -1,6 +1,7 @@
 using System.Net;
 using Kuroko.Core.Hotkeys;
 using Kuroko.Core.Providers;
+using Kuroko.Core.Secrets;
 using Tomlyn;
 using Tomlyn.Model;
 
@@ -37,7 +38,9 @@ public static class SettingsLoader
         "type", "base_url", "model", "api_key", "api_key_env", "timeout_seconds", "reasoning", "max_output_tokens",
     };
 
-    public static SettingsLoadResult Parse(string toml, Func<string, string?> getEnv)
+    /// <param name="getEnv">Reads an environment variable (api_key_env).</param>
+    /// <param name="keyStore">Keys stored outside the file (Windows Credential Manager); asked only when neither api_key nor api_key_env gave a key.</param>
+    public static SettingsLoadResult Parse(string toml, Func<string, string?> getEnv, IKeyStore? keyStore = null)
     {
         var issues = new List<ConfigIssue>();
 
@@ -146,7 +149,7 @@ public static class SettingsLoader
                         continue;
                     }
 
-                    if (ReadProvider(name, table, reader, getEnv) is { } provider) providers[name] = provider;
+                    if (ReadProvider(name, table, reader, getEnv, keyStore) is { } provider) providers[name] = provider;
                 }
             }
             else
@@ -221,7 +224,7 @@ public static class SettingsLoader
         return text;
     }
 
-    private static ProviderSettings? ReadProvider(string name, TomlTable table, TomlReader reader, Func<string, string?> getEnv)
+    private static ProviderSettings? ReadProvider(string name, TomlTable table, TomlReader reader, Func<string, string?> getEnv, IKeyStore? keyStore)
     {
         // Lines are looked up inside this provider's own block, so an error in the third provider points at the third provider.
         var block = reader.Block($"[providers.{name}]");
@@ -267,20 +270,31 @@ public static class SettingsLoader
             reader.Issue(Line("api_key"), $"[providers.{name}] api_key must be text (in quotes)", isError: false);
         }
 
+        // Order: api_key in the file, then the environment variable, then the key store (Windows Credential Manager).
+        var keySource = string.IsNullOrWhiteSpace(apiKey) ? ApiKeySource.None : ApiKeySource.File;
         var keyEnvName = reader.Choice(table, "api_key_env", string.Empty, null, Line);
-        if (string.IsNullOrWhiteSpace(apiKey) && keyEnvName.Length > 0)
+        if (keySource == ApiKeySource.None && keyEnvName.Length > 0)
         {
             apiKey = getEnv(keyEnvName);
-            if (string.IsNullOrWhiteSpace(apiKey))
-            {
-                reader.Issue(Line("api_key_env"), $"[providers.{name}] environment variable {keyEnvName} is not set", isError: false);
-            }
+            if (!string.IsNullOrWhiteSpace(apiKey)) keySource = ApiKeySource.Environment;
         }
 
-        apiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey.Trim();
-        if (apiKey is null && type != ProviderType.OpenAiCompatible && keyEnvName.Length == 0 && !keyHasWrongType)
+        if (keySource == ApiKeySource.None && keyStore is not null)
         {
-            reader.Issue(Line("api_key"), $"[providers.{name}] no api_key or api_key_env set", isError: false);
+            apiKey = keyStore.Read(name);
+            if (!string.IsNullOrWhiteSpace(apiKey)) keySource = ApiKeySource.CredentialManager;
+        }
+
+        apiKey = keySource == ApiKeySource.None ? null : apiKey!.Trim();
+        var storeHint = keyStore is null ? string.Empty : $" and no key is stored in the Windows Credential Manager ({KeyStoreNames.Target(name)})";
+        if (apiKey is null && keyEnvName.Length > 0)
+        {
+            reader.Issue(Line("api_key_env"), $"[providers.{name}] environment variable {keyEnvName} is not set{storeHint}", isError: false);
+        }
+        else if (apiKey is null && type != ProviderType.OpenAiCompatible && !keyHasWrongType)
+        {
+            var what = keyStore is null ? "no api_key or api_key_env set" : "no api_key or api_key_env set and no key stored";
+            reader.Issue(Line("api_key"), $"[providers.{name}] {what}", isError: false);
         }
 
         if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
@@ -310,7 +324,8 @@ public static class SettingsLoader
             failed = true;
         }
 
-        return failed ? null : new ProviderSettings(name, type.Value, baseUrl, model, apiKey, TimeSpan.FromSeconds(timeout), reasoning, maxTokens);
+        return failed ? null : new ProviderSettings(name, type.Value, baseUrl, model, apiKey, TimeSpan.FromSeconds(timeout), reasoning, maxTokens,
+            keySource, keyEnvName.Length > 0 ? keyEnvName : null);
     }
 
     public static string DefaultBaseUrl(ProviderType type) => type switch

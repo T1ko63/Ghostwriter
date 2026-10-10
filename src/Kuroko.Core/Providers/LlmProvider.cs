@@ -416,5 +416,5 @@ public abstract class LlmProvider : ILlmProvider
     }
 
     protected string AuthKey => Settings.ApiKey
-        ?? throw Error(LlmErrorKind.Auth, "no API key configured (api_key or api_key_env in settings.toml)");
+        ?? throw Error(LlmErrorKind.Auth, "no API key configured (api_key or api_key_env in settings.toml, or a key stored via the tray menu)");
 }

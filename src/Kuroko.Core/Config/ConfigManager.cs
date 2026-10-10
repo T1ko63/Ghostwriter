@@ -1,5 +1,6 @@
 using System.Text;
 using Kuroko.Core.Prompts;
+using Kuroko.Core.Secrets;
 
 namespace Kuroko.Core.Config;
 
@@ -22,16 +23,18 @@ public sealed record ReloadResult(ConfigSnapshot Snapshot, bool SettingsChanged,
 public sealed class ConfigManager
 {
     private readonly Func<string, string?> _getEnv;
+    private readonly IKeyStore? _keyStore;
     private readonly object _gate = new();
     private ConfigSnapshot _current = new(AppSettings.Fallback, BuiltInPrompts.All);
     private string? _settingsText;
     private string? _promptsText;
     private IReadOnlyDictionary<string, int> _promptLines = new Dictionary<string, int>();
 
-    public ConfigManager(string directory, Func<string, string?> getEnv)
+    public ConfigManager(string directory, Func<string, string?> getEnv, IKeyStore? keyStore = null)
     {
         Directory = directory;
         _getEnv = getEnv;
+        _keyStore = keyStore;
     }
 
     public string Directory { get; }
@@ -80,7 +83,7 @@ public sealed class ConfigManager
                 }
                 else
                 {
-                    var parsed = SettingsLoader.Parse(settingsText, _getEnv);
+                    var parsed = SettingsLoader.Parse(settingsText, _getEnv, _keyStore);
                     issues.AddRange(parsed.Issues);
                     newSettings = parsed.Settings;
                 }

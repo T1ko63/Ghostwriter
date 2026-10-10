@@ -59,7 +59,16 @@ public sealed class LlmException : Exception
     public TimeSpan? RetryAfter { get; }
 }
 
-/// <summary>Resolved configuration of one provider (keys already looked up from the environment if needed).</summary>
+/// <summary>Where a provider's API key came from.</summary>
+public enum ApiKeySource
+{
+    None,
+    File,
+    Environment,
+    CredentialManager,
+}
+
+/// <summary>Resolved configuration of one provider (keys already looked up from the environment or the key store if needed).</summary>
 public sealed record ProviderSettings(
     string Name,
     ProviderType Type,
@@ -68,7 +77,18 @@ public sealed record ProviderSettings(
     string? ApiKey,
     TimeSpan Timeout,
     string Reasoning = "off",
-    int MaxOutputTokens = 0);
+    int MaxOutputTokens = 0,
+    ApiKeySource KeySource = ApiKeySource.None,
+    string? ApiKeyEnv = null)
+{
+    // The generated ToString would print the key; it must never end up in a log or an exception text.
+    private bool PrintMembers(System.Text.StringBuilder builder)
+    {
+        builder.Append($"Name = {Name}, Type = {Type}, BaseUrl = {BaseUrl}, Model = {Model}, ApiKey = {(ApiKey is null ? "null" : "***")}, ");
+        builder.Append($"Timeout = {Timeout}, Reasoning = {Reasoning}, MaxOutputTokens = {MaxOutputTokens}, KeySource = {KeySource}, ApiKeyEnv = {ApiKeyEnv}");
+        return true;
+    }
+}
 
 /// <summary>One request to a model. Output limit and texts are decided by the caller.</summary>
 public sealed record LlmRequest(string Model, string System, string User, int MaxOutputTokens, LlmTimings? Timings = null);
