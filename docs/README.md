@@ -91,7 +91,13 @@ Themes stehen im Block `[appearance]` der `settings.toml` (siehe unten); alle Ne
 Hover) werden aus der Textfarbe abgeleitet. `accent` färbt nur noch Textcursor, Textmarkierung und Fortschrittslinie, die Auswahlzeile
 bestimmt `selection`. Maße, Schriftgrößen und Abstände stehen weiter an einer Stelle: `src\Kuroko.App\Themes\Design.xaml`.
 
-**Tray-Menü:** Config-Ordner öffnen · Config neu laden · API-Schlüssel … · Mit Windows starten · Beenden.
+**Tray-Menü:** Prompts bearbeiten · Einstellungen bearbeiten · Config-Ordner öffnen · Config neu laden · API-Schlüssel … ·
+Verbindung testen · Mit Windows starten · Über Kuroko … · Beenden.
+
+* **Prompts bearbeiten / Einstellungen bearbeiten** öffnen `prompts.toml` bzw. `settings.toml` im Standardprogramm für
+  `.toml`-Dateien; ist keins eingerichtet, im Editor (Notepad). Nach dem Speichern gilt die Änderung sofort.
+* **Verbindung testen** schickt eine Mini-Anfrage an den Standard-Anbieter und meldet, ob Schlüssel, Modell und Netz
+  funktionieren (mit Antwortzeit), sonst den Grund, z. B. „API-Schlüssel fehlt oder wurde abgelehnt“.
 
 ## Konfiguration
 
@@ -128,6 +134,10 @@ Bestehende Konfigurationen mit `api_key_env` funktionieren unverändert. Für ei
 settings.toml nichts stehen; `api_key_env` darf trotzdem bleiben (ist die Variable gesetzt, hat sie Vorrang).
 Alternativ in der Eingabeaufforderung: `cmdkey /generic:Kuroko:gemini /user:Kuroko /pass` (fragt den Schlüssel ab,
 ohne dass er im Verlauf landet), danach „Config neu laden“.
+
+Findet Kuroko beim Start für den Standard-Anbieter keinen Schlüssel, nennt ein Hinweis die erwartete Umgebungsvariable
+(aus `api_key_env`, z. B. `GEMINI_API_KEY`) und den Weg über **API-Schlüssel …**; der Hinweis bleibt zusätzlich in den
+Windows-Benachrichtigungen stehen. Ob der Schlüssel dann funktioniert, zeigt Tray-Symbol → **Verbindung testen**.
 
 ### settings.toml (Auszug)
 
@@ -248,6 +258,9 @@ Was der Anbieter mit dem Text macht und wie lange er ihn aufbewahrt, regeln dess
 `HEAD` an die `base_url` des Standard-Anbieters, damit die Verbindung beim eigentlichen Aufruf schon steht. Es enthält
 weder Text noch Schlüssel, nur die Kennung `Kuroko/1.0`.
 
+**Verbindungstest:** Nur wenn du im Tray „Verbindung testen“ wählst, geht eine echte Anfrage an den Standard-Anbieter, mit
+dem Schlüssel und dem festen Text „ping“ (höchstens 16 Ausgabe-Tokens). Text aus anderen Apps ist nicht dabei.
+
 **API-Schlüssel:** Der Schlüssel geht nur im HTTP-Header an den gewählten Anbieter (`Authorization`, `x-api-key` bzw.
 `x-goog-api-key`), nie in der URL. Über `http://` an einen entfernten Host wird er nicht gesendet; eine solche `base_url`
 lehnt die Config ab (erlaubt sind `localhost`, Rechnernamen ohne Punkt, `.local` und private IP-Adressen). In
@@ -322,8 +335,8 @@ Während die Antwort noch läuft, wird der Kopier-Hotkey ignoriert (kein halbes 
 * **Log:** `kuroko.log` im Config-Ordner (Inhalt siehe [Datenschutz](#datenschutz); nie Texte oder Schlüssel).
 * **Hotkey reagiert nicht:** Wenn eine andere App ihn belegt, meldet Kuroko das beim Start/Neuladen. Anderen Hotkey wählen.
 * **„API-Schlüssel fehlt":** Schlüssel über Tray-Symbol → „API-Schlüssel …“ speichern, oder `api_key` bzw.
-  `api_key_env` im Provider-Block setzen; Umgebungsvariablen werden beim Start gelesen (nach dem Setzen der Variable
-  die App neu starten oder „Config neu laden").
+  `api_key_env` im Provider-Block setzen. Eine neu gesetzte Umgebungsvariable sieht nur eine neu gestartete App
+  (Kuroko beenden und wieder starten; „Config neu laden“ reicht dafür nicht). Danach mit „Verbindung testen“ prüfen.
 
 ## Entwickler-Schalter (Umgebungsvariablen)
 

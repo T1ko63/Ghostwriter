@@ -155,14 +155,14 @@ public partial class StatusWindow : Window
         _autoHide.Start();
     }
 
-    /// <summary>A short, quiet confirmation (muted text, gone after two seconds), e.g. "Undone".</summary>
-    public void ShowInfo(string text, Anchor anchor)
+    /// <summary>A short, quiet confirmation (muted text, gone after two seconds unless <paramref name="longer"/>), e.g. "Undone".</summary>
+    public void ShowInfo(string text, Anchor anchor, bool longer = false)
     {
         LeaveResultMode();
         _isProgress = false;
         Present(text, anchor, showBar: false);
         _autoHide.Stop();
-        _autoHide.Interval = InfoDuration;
+        _autoHide.Interval = longer ? ErrorDuration : InfoDuration;
         _autoHide.Start();
     }
 

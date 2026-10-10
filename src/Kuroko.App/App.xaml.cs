@@ -319,17 +319,56 @@ public partial class App : Application
     /// </summary>
     private void ShowStartupHint(bool firstRun)
     {
-        var settings = _config!.Current.Settings;
-        var provider = settings.DefaultProvider is { } name && settings.Providers.TryGetValue(name, out var p) ? p : null;
-        var keyMissing = provider is { ApiKey: null } && provider.Type != ProviderType.OpenAiCompatible;
-        var noProvider = settings.Providers.Count == 0;
-        if (!firstRun && !keyMissing && !noProvider) return;
+        if (StartupHint.Build(_config!.Current.Settings, firstRun) is not { } hint) return;
+        _controller!.ShowNotice(hint);
 
-        var parts = new List<string>();
-        if (firstRun) parts.Add(Loc.Get("first_run", settings.OverlayHotkey));
-        if (noProvider) parts.Add(Loc.Get("hint_no_provider"));
-        else if (keyMissing) parts.Add(Loc.Get("hint_no_key", provider!.Name));
-        _controller!.ShowNotice(string.Join(" ", parts));
+        // The pill is gone after a few seconds; the notification stays in the action center, so the variable name can be read again.
+        if (StartupHint.MissingKey(_config.Current.Settings) is not null) _tray!.ShowMessage("Kuroko", hint);
+    }
+
+    /// <summary>Opens settings.toml or prompts.toml in the editor Windows has for .toml files, or in Notepad if there is none.</summary>
+    private void OpenFile(string path)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            // Usually "no application is associated" (1155): .toml has no default program on a fresh Windows.
+            AppLog.Info($"No default program for {Path.GetFileName(path)} ({ex.NativeErrorCode}), using Notepad.");
+            try
+            {
+                Process.Start(new ProcessStartInfo("notepad.exe") { ArgumentList = { path }, UseShellExecute = false });
+            }
+            catch (System.ComponentModel.Win32Exception again)
+            {
+                AppLog.Error($"{Path.GetFileName(path)} could not be opened.", again);
+                _controller!.ShowNotice(Loc.Get("err_open_file", Path.GetFileName(path)));
+            }
+        }
+    }
+
+    private bool _testingConnection;
+
+    /// <summary>Tray "Test connection": one tiny request to the default provider, the outcome shown in the status pill.</summary>
+    private async void TestConnection()
+    {
+        if (_testingConnection) return;
+        _testingConnection = true;
+        try
+        {
+            var registry = _providers!;
+            _controller!.ShowNotice(Loc.Get("conn_testing", registry.DefaultProvider ?? "-"), NoticeKind.Progress);
+            var result = await ConnectionTest.RunAsync(registry);
+            if (result.Success) AppLog.Info($"Connection test: {result.Provider} ok in {result.Elapsed.TotalMilliseconds:F0} ms");
+            else AppLog.Warn($"Connection test failed: {result.Error!.Message}");
+            _controller.ShowNotice(ConnectionTest.Describe(result), result.Success ? NoticeKind.Info : NoticeKind.Error);
+        }
+        finally
+        {
+            _testingConnection = false;
+        }
     }
 
     /// <summary>
@@ -473,9 +512,13 @@ public partial class App : Application
 
     private IReadOnlyList<TrayMenuItem> BuildMenu() =>
     [
+        new TrayMenuItem(Loc.Get("tray_edit_prompts"), () => OpenFile(_config!.PromptsPath)),
+        new TrayMenuItem(Loc.Get("tray_edit_settings"), () => OpenFile(_config!.SettingsPath)),
         new TrayMenuItem(Loc.Get("tray_open_config"), () => Process.Start(new ProcessStartInfo(_configDir) { UseShellExecute = true })),
         new TrayMenuItem(Loc.Get("tray_reload"), () => ReloadConfig(manual: true)),
+        new TrayMenuItem(string.Empty, () => { }, Separator: true),
         new TrayMenuItem(Loc.Get("tray_keys"), ShowKeysWindow),
+        new TrayMenuItem(Loc.Get("tray_test"), TestConnection),
         new TrayMenuItem(Loc.Get("tray_autostart"), ToggleAutostart, Checked: _config!.Current.Settings.Autostart),
         new TrayMenuItem(string.Empty, () => { }, Separator: true),
         new TrayMenuItem(Loc.Get("tray_about"), ShowAbout),

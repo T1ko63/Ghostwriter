@@ -16,10 +16,6 @@ using Kuroko.Platform.Windowing;
 
 namespace Kuroko.App;
 
-/// <summary>
-/// Ties the pieces together: hotkey -> (overlay) -> read text -> run prompt -> replace text.
-/// All entry points run on the UI thread. Only one run is active at a time.
-/// </summary>
 /// <summary>result_position: a fixed place, the place of the prompt picker (follow), the text cursor or the mouse.</summary>
 public enum ResultPlacement
 {
@@ -29,6 +25,18 @@ public enum ResultPlacement
     Mouse,
 }
 
+/// <summary>How a notice in the status pill looks: an error, a quiet confirmation, or a progress bar that stays.</summary>
+public enum NoticeKind
+{
+    Error,
+    Info,
+    Progress,
+}
+
+/// <summary>
+/// Ties the pieces together: hotkey -> (overlay) -> read text -> run prompt -> replace text.
+/// All entry points run on the UI thread. Only one run is active at a time.
+/// </summary>
 public sealed class AppController
 {
     private sealed record Session(TargetInfo? Target, Task<FocusProbe> Probe, Anchor Anchor);
@@ -140,7 +148,7 @@ public sealed class AppController
     /// Shows a short message (config errors, "configuration loaded") in the status pill near the mouse. Windows
     /// notifications can be silenced by Focus Assist; this one always shows.
     /// </summary>
-    public void ShowNotice(string message)
+    public void ShowNotice(string message, NoticeKind kind = NoticeKind.Error)
     {
         if (_busy || _cardLive)
         {
@@ -149,7 +157,19 @@ public sealed class AppController
         }
 
         AppLog.Info($"Notice: {message}");
-        _status.ShowError(message, Anchor.Resolve(null, OverlayPosition.Mouse));
+        var anchor = Anchor.Resolve(null, OverlayPosition.Mouse);
+        switch (kind)
+        {
+            case NoticeKind.Progress:
+                _status.ShowProgress(message, anchor);
+                break;
+            case NoticeKind.Info:
+                _status.ShowInfo(message, anchor, longer: true);
+                break;
+            default:
+                _status.ShowError(message, anchor);
+                break;
+        }
     }
 
     /// <summary>Global overlay hotkey.</summary>
