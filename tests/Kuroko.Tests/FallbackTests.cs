@@ -194,7 +194,9 @@ public class FallbackRunnerTests
 
 public class FallbackConfigTests
 {
-    private const string Providers = """
+    // LF line endings whatever the checkout uses (core.autocrlf turns them into CRLF on Windows), so the tests below can
+    // insert lines with Replace("...\n", ...).
+    private static readonly string Providers = """
         [providers.gemini]
         type = "gemini"
         model = "m"
@@ -210,7 +212,7 @@ public class FallbackConfigTests
         base_url = "http://localhost:11434/v1"
         model = "llama"
 
-        """;
+        """.ReplaceLineEndings("\n");
 
     private static SettingsLoadResult Parse(string toml) => SettingsLoader.Parse(toml, _ => null);
 
