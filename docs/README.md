@@ -372,7 +372,7 @@ Voraussetzung: .NET 10 SDK (Windows).
 
 ```powershell
 dotnet build                       # Debug
-dotnet test                        # Unit-Tests (Marker, Config, Provider mit simuliertem Server, ...)
+dotnet test                        # alle Tests: Kuroko.Tests (Core) und Kuroko.Windows.Tests (Platform/App)
 powershell -File tools\publish.ps1 # Release mit ReadyToRun nach publish\Kuroko
 powershell -File tools\publish.ps1 -SelfContained   # läuft ohne installierte .NET-Runtime (~150 MB)
 ```
@@ -393,7 +393,17 @@ Das Icon wird mit `tools\make-icon.ps1` erzeugt.
 | `Kuroko.Core` | UI-frei: Prompt-Engine, Marker-Parser, Provider-Adapter (HttpClient + SSE), Konfiguration, Hot-Reload |
 | `Kuroko.Platform` | Win32: globale Hotkeys, Textzugriff (UI Automation und Zwischenablage), Tray, Fenster-Helfer, Autostart |
 | `Kuroko.App` | WPF: Overlay, Status-Pille, Themes, Zusammenspiel (`AppController`) |
-| `Kuroko.Tests` | xUnit |
+| `Kuroko.Tests` | xUnit, `net10.0`: Core (Marker, Prompt-Aufbau, Config, Provider mit simuliertem Server, Undo, …) |
+| `Kuroko.Windows.Tests` | xUnit, `net10.0-windows`: Entscheidungslogik von `TextAccessService` und Ablauf von `AppController` mit Fakes |
+
+**Tests für Platform/App:** Zwischenablage (`IClipboard`), Tastatureingaben (`IKeyboard`), UI-Automation-/Fokusabfragen
+(`IFieldInspector`), Hotkeys (`IHotkeyRegistry`), die beiden WPF-Fenster (`IOverlayView`, `IStatusView`) und der Rest von
+Windows (`IDesktop`) liegen hinter schmalen Interfaces. Die echten Implementierungen (`ClipboardService`, `InputSimulator`,
+`UiaFieldInspector`, `HotkeyManager`, `OverlayWindow`, `StatusWindow`, `Win32Desktop`) werden in den Tests nie aufgerufen; dort
+spielen Fakes die Ziel-App, die Zwischenablage und die KI. `AppController`-Tests laufen auf einem eigenen Thread mit
+Nachrichtenschleife (`UiThread.Run`), wie auf dem UI-Thread. Was die Tests nicht abdecken (echtes SendInput, echte
+Zwischenablage, Antworten echter Apps über UIA, Fensterdarstellung), bleibt Sache der manuellen Checkliste in
+[`refactoring-report.md`](refactoring-report.md#manuelle-testcheckliste).
 
 **Textzugriff, gestuft:** (1) UI Automation für die Markierung, ohne die Zwischenablage anzufassen; (2) Strg+C mit
 Marker-Text als Erkennung; (3) ohne Markierung das ganze Feld (nicht bei Overlay-Ausgabe: dort nie Strg+A, siehe oben). Ersetzt wird per Strg+V; die Zwischenablage des Nutzers

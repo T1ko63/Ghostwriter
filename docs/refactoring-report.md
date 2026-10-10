@@ -216,7 +216,7 @@ Tests: 350 → **375** (neu: atomares Schreiben und Encoding, `api_key`-Typ, Akz
 Abweichungen vom Plan:
 - **E10 teilweise:** Die „unerreichbare“ Null-Prüfung in `TextAccessService.CaptureAsync` bleibt, weil der Compiler sie
   für die Nullable-Analyse braucht. Nur der leere `if`-Zweig wurde entfernt.
-- **F3 (Tests für Platform/App) nicht umgesetzt:** `ClipboardService` und `TextAccessService` rufen Win32 direkt auf.
+- **F3 (Tests für Platform/App) nicht umgesetzt** *(inzwischen umgesetzt, siehe [Nachtrag F3](#nachtrag-2026-10-10-f3-tests-für-platform-und-app))*: `ClipboardService` und `TextAccessService` rufen Win32 direkt auf.
   Sie testbar zu machen hieße, Zwischenablage und Tastatureingabe hinter neue Interfaces zu legen. Das wäre mehr Code und
   ein größerer Umbau genau im empfindlichsten Teil. Die Zwischenablage-Wiederherstellung ist weiterhin per `try/finally`
   in jedem Pfad abgesichert; die neuen Prüfungen schreiben jede Entscheidung ins Log („field check …“).
@@ -286,7 +286,7 @@ Performance (D1, D2, D4), Warnungs-Hygiene (F1).
 - **S11** (kurze Sleeps beim Config-Lesen auf dem UI-Thread): höchstens 160 ms und nur beim Speichern im Editor; der Umbau lohnt nicht.
 - **D3** (Startpfad): die rund 300 ms für Fenster und Warm-up sind der Preis für ein Overlay in 7–10 ms.
 - **A2/A3** (`App.xaml.cs`/`AppController` aufteilen): kein Stabilitätsgewinn, nur Diff.
-- **F3** (Tests für Platform/App): siehe oben.
+- **F3** (Tests für Platform/App): siehe oben; inzwischen umgesetzt, siehe [Nachtrag F3](#nachtrag-2026-10-10-f3-tests-für-platform-und-app).
 - **Analyzer-Stufe „recommended“**: brächte vor allem Stilregeln (480× Unterstriche in Testnamen) und Kultur-Hinweise ohne praktische Wirkung.
 - Provider-Adapter nicht weiter zusammengelegt: die Gemeinsamkeiten liegen schon in `LlmProvider`.
 
@@ -320,3 +320,68 @@ Performance (D1, D2, D4), Warnungs-Hygiene (F1).
   `CanUploadToCloudClipboard=0` und `ExcludeClipboardContentFromMonitorProcessing` markiert, damit kein Doppel-Eintrag
   entsteht. Ein leerer Snapshot bleibt leer. `ClipboardService.TryRestore`. Dass die Ziel-App beim Strg+C die Markierung
   in den Verlauf legt, bleibt unvermeidbar.
+
+## Nachtrag (2026-10-10): F3, Tests für Platform und App
+
+**Entscheidung:** ein zweites Testprojekt `tests/Kuroko.Windows.Tests` (`net10.0-windows`, `UseWPF`), das Core, Platform und
+App referenziert. `Kuroko.Tests` bleibt `net10.0` und rein auf Core. Die Alternative, die Entscheidungslogik nach Core zu
+verschieben, hätte `TargetInfo`, `UiaFocusInfo` und den ganzen Lese-/Einfüge-Ablauf umziehen lassen, also genau den
+empfindlichsten Teil umgebaut. Stattdessen bleibt der Code, wo er ist, und bekommt schmale Interfaces für alles, was
+Windows berührt. Die neuen Tests laufen damit nur unter Windows; Kuroko selbst läuft ohnehin nur dort.
+
+**Neue Schnittstellen** (je ein Commit, Verhalten unverändert, vor und nach jedem Schritt Build mit 0 Warnungen und alle Tests grün):
+
+| Interface | echte Implementierung | wofür |
+|---|---|---|
+| `IClipboard` | `ClipboardService` | Snapshot/Restore, Sentinel, verzögertes Einfügen, Änderungen abwarten |
+| `IKeyboard` | `InputSimulator` (jetzt eine Instanz statt statisch) | Strg+A/C/V |
+| `IFieldInspector` | `UiaFieldInspector` | UIA-Abfragen, Vordergrund- und Fokusfenster; das UIA-Element reist als undurchsichtiges `FieldElement` |
+| `IHotkeyRegistry` | `HotkeyManager` | temporäre Hotkeys (Esc, Kopieren) |
+| `IOverlayView`, `IStatusView` | `OverlayWindow`, `StatusWindow` | Prompt-Auswahl, Pille, Ergebnis-Karte |
+| `IDesktop` | `Win32Desktop` | Zielfenster erfassen, Fokus zurückgeben, Timer-Auflösung, Vordergrund-Überwachung, Frame-Callback fürs Log |
+
+Die Zeitbudgets von `TextAccessService` stehen jetzt in einem internen `TextAccessTimings` (gleiche Werte); Tests kürzen sie,
+damit Timeout-Pfade nicht Sekunden dauern. `Kuroko.Platform` gibt seine Interna per `InternalsVisibleTo` nur dem Testprojekt frei.
+
+**Tests:** 92 neue, insgesamt 539 (447 Core + 92 Windows), alle grün, auch bei achtfacher Wiederholung.
+- `TextAccessServiceTests` (39): welche Strategie liest (UIA-Auswahl, ganzes Feld per UIA, Strg+C, Strg+A als Rückfall,
+  Strg+A zuerst in Web-Editoren), wann nie Strg+A gesendet wird (Overlay-Ausgabe, Explorer, Nicht-Text-Elemente),
+  Fehlerfälle (Zwischenablage belegt beim Sichern oder beim Sentinel, Eingabe blockiert, Text zu lang, nichts kopiert, App
+  füllt die Zwischenablage in zwei Schritten), die Prüfungen vor dem Einfügen (anderes Fenster, anderes Fokusfenster,
+  anderes Feld, Auswahl verschoben, Ganzfeld-Auswahl nicht beweisbar, Prüfungen ohne Antwort blockieren nicht),
+  Einfügen nicht bestätigt, Abbruch vor und nach Strg+V, längere Wartezeit bei Remote-Desktop, und dass die Zwischenablage
+  des Nutzers immer zurückkommt, und zwar erst nach dem Einfügen.
+- `AppControllerTests` (43): Busy-Flag und Timer-Auflösung, Esc und Klick auf die Pille zu verschiedenen Zeitpunkten
+  (beim Lesen, während die KI arbeitet, nach der Antwort aber vor dem Einfügen, nach dem Lauf), Fehlerpillen für jede
+  Lese- und Einfügestörung, KI-Fehler, unerwartete Ausnahmen vor und nach der Antwort, Antwort aufbewahren und per
+  Hotkey kopieren (auch: Hotkey belegt, Zwischenablage belegt, Pille abgelaufen), Fallback-Anbieter, Overlay-Pfade
+  (Fokus zurück, Wegklicken, Passwortfeld erst nach dem Öffnen erkannt, Fehler beim Öffnen), Ergebnis-Karte (Streaming,
+  Kopieren erst nach dem Ende, Esc, Fensterwechsel, neuer Hotkey, Fehler mitten in der Antwort) und Rückgängig.
+- `CapturePolicyTests` (10): Lese-Regeln je Modus und die Erkennung von Terminals, Explorer und Remote-Clients.
+- Die `AppController`-Tests laufen auf einem eigenen Thread mit Nachrichtenschleife (`UiThread.Run`), damit jede
+  Fortsetzung wie in der App auf denselben Thread zurückkommt.
+
+**Gegenprobe durch gezieltes Brechen:** 17 Änderungen an der Logik eingebaut, jeweils einzeln getestet und wieder entfernt.
+Alle 17 wurden von mindestens einem Test erkannt:
+- `TextAccessService`: Zwischenablage nach dem Lesen nicht zurückschreiben; Abbruch verkürzt das Warten nach Strg+V;
+  keine Vordergrund-Prüfung; Strg+A auch bei Overlay-Ausgabe; Einfügen trotz unbewiesener Ganzfeld-Auswahl; UIA-„leer“
+  auch in Web-Engines vertrauen; Zwischenablage vor der Bestätigung zurückschreiben.
+- `AppController`: Busy-Flag nach dem Lauf nicht zurücksetzen; Abbruch zeigt eine Fehlerpille; Antwort bei unerwartetem
+  Fehler verlieren; Antwort nicht aufbewahren; Esc nach dem Lauf nicht freigeben; Fehler beim Öffnen des Overlays lässt
+  den Controller beschäftigt; Fallback-Hinweis fehlt; Klick auf die Pille ignoriert; Schließen der Karte bricht die
+  Anfrage nicht ab; Kopier-Hotkey der Fehlerpille nicht registriert.
+
+**Weiterhin nur von Hand prüfbar** (bleibt hinter den Interfaces und wird nicht simuliert; dafür gilt die
+[manuelle Testcheckliste](#manuelle-testcheckliste)):
+- echtes `SendInput`: gedrückt gehaltene Modifier aus dem Hotkey, UIPI bei Fenstern mit Administratorrechten;
+- echte Zwischenablage: Sperren durch andere Programme, verzögertes Rendern (`WM_RENDERFORMAT`), Snapshot und Restore
+  aller Formate (Bilder, formatierter Text), Verlauf-/Cloud-Markierungen;
+- was echte Apps über UI Automation melden (Auswahl, Monaco-Hilfsfeld in VS Code, Laufzeit-IDs nach Fokus-Rückkehr),
+  `GetGUIThreadInfo`, Fokus-Rückgabe;
+- Registrieren globaler Hotkeys, der WinEvent-Hook für den Fensterwechsel, Darstellung und Platzierung von Overlay,
+  Pille und Karte, echte Zeiten.
+
+**Beobachtung, nicht geändert:** `ClipboardService.WaitForChangeAsync` reicht das Abbruch-Token an `Task.Delay` in einem
+`Task.WhenAny` weiter. Ein Abbruch während des Lesens beendet das Warten deshalb nicht, sondern lässt die Schleife bis zum
+Ende des Kopier-Timeouts (höchstens 450 ms) ohne Pause laufen; danach greift der Abbruch wie gewohnt. Für den Nutzer ist das
+höchstens eine halbe Sekunde Verzögerung, aber unnötige CPU-Last. Kandidat für eine kleine, eigene Änderung.
