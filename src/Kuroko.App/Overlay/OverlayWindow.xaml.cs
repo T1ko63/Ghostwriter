@@ -26,7 +26,7 @@ public sealed record PromptRow(PromptDefinition Prompt, string Number)
 /// taking the focus and activated separately (see <see cref="ActivateForInput"/>), so the hotkey handler
 /// can finish reading the target field before the focus moves.
 /// </summary>
-public partial class OverlayWindow : Window
+public partial class OverlayWindow : Window, IOverlayView
 {
     private IReadOnlyList<PromptDefinition> _all = [];
     private List<PromptRow> _rows = [];

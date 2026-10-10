@@ -12,8 +12,18 @@ public readonly record struct HotkeyRegistration(bool Success, int Id, string? E
     public static HotkeyRegistration Fail(string error) => new(false, 0, error);
 }
 
+/// <summary>Registering and releasing single hotkeys; <see cref="HotkeyManager"/> is the real one, tests use a fake.</summary>
+public interface IHotkeyRegistry
+{
+    /// <inheritdoc cref="HotkeyManager.Register"/>
+    HotkeyRegistration Register(HotkeyGesture gesture, Action<long> callback, bool temporary = false);
+
+    /// <inheritdoc cref="HotkeyManager.Unregister"/>
+    void Unregister(int id);
+}
+
 /// <summary>Global hotkeys via RegisterHotKey. Callbacks run on the window's (UI) thread.</summary>
-public sealed class HotkeyManager : IDisposable
+public sealed class HotkeyManager : IHotkeyRegistry, IDisposable
 {
     private const uint MOD_NOREPEAT = 0x4000;
 

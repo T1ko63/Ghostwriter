@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text;
-using System.Windows.Media;
 using Kuroko.App.Overlay;
 using Kuroko.Core.Config;
 using Kuroko.Core.Diagnostics;
@@ -10,9 +9,7 @@ using Kuroko.Core.Prompts;
 using Kuroko.Core.Providers;
 using Kuroko.Core.Undo;
 using Kuroko.Platform.Hotkeys;
-using Kuroko.Platform.Native;
 using Kuroko.Platform.TextIntegration;
-using Kuroko.Platform.Windowing;
 
 namespace Kuroko.App;
 
@@ -42,8 +39,8 @@ public sealed class AppController
     private sealed record Session(TargetInfo? Target, Task<FocusProbe> Probe, Anchor Anchor);
 
     private readonly ITextAccess _text;
-    private readonly OverlayWindow _overlay;
-    private readonly StatusWindow _status;
+    private readonly IOverlayView _overlay;
+    private readonly IStatusView _status;
     private readonly IPromptRunner _runner;
     private readonly Func<IReadOnlyList<PromptDefinition>> _prompts;
 
@@ -57,21 +54,23 @@ public sealed class AppController
         set
         {
             _busy = value;
-            NativeTimer.SetHighResolution(value);
+            _desktop.SetHighResolutionTimer(value);
         }
     }
 
     private readonly Action? _warmUp;
-    private readonly HotkeyManager? _hotkeys;
+    private readonly IHotkeyRegistry? _hotkeys;
+    private readonly IDesktop _desktop;
     private readonly IClipboard? _clipboard;
 
     /// <param name="prompts">Read on every use, so a reloaded prompts.toml is picked up without rebuilding anything.</param>
     /// <param name="hotkeys">Needed for the temporary hotkeys: Esc during a run, Esc and copy while the result card is up.</param>
     /// <param name="clipboard">Needed to copy the text of the result card and the last result.</param>
+    /// <param name="desktop">Target window, focus, timer resolution and foreground watch; <see cref="Win32Desktop"/> when not given.</param>
     public AppController(
-        ITextAccess text, OverlayWindow overlay, StatusWindow status, IPromptRunner runner,
+        ITextAccess text, IOverlayView overlay, IStatusView status, IPromptRunner runner,
         Func<IReadOnlyList<PromptDefinition>> prompts, Action? warmUp = null,
-        HotkeyManager? hotkeys = null, IClipboard? clipboard = null)
+        IHotkeyRegistry? hotkeys = null, IClipboard? clipboard = null, IDesktop? desktop = null)
     {
         _text = text;
         _overlay = overlay;
@@ -81,6 +80,7 @@ public sealed class AppController
         _warmUp = warmUp;
         _hotkeys = hotkeys;
         _clipboard = clipboard;
+        _desktop = desktop ?? new Win32Desktop();
 
         _overlay.PromptChosen += prompt => _ = OnPromptChosenAsync(prompt);
         _overlay.Cancelled += () => _ = CloseOverlayAsync(restoreFocus: true);
@@ -195,7 +195,7 @@ public sealed class AppController
         }
 
         // Read-only targets are fine here: whether that matters is decided once a prompt is chosen (overlay output works, replace does not).
-        var target = TargetInfo.Capture();
+        var target = _desktop.CaptureTarget();
         var anchor = MakeAnchor(target);
         if (Reject(_text.PreCheck(target, null, CaptureMode.Display), target, anchor)) return;
 
@@ -283,7 +283,7 @@ public sealed class AppController
             return;
         }
 
-        var target = TargetInfo.Capture();
+        var target = _desktop.CaptureTarget();
         var anchor = MakeAnchor(target);
         if (Reject(_text.PreCheck(target, null, ModeOf(prompt)), target, anchor)) return;
 
@@ -341,7 +341,7 @@ public sealed class AppController
         _overlay.HideOverlay();
         try
         {
-            if (restoreFocus && session?.Target is { } target) await WindowHelper.RestoreFocusAsync(target);
+            if (restoreFocus && session?.Target is { } target) await _desktop.RestoreFocusAsync(target);
         }
         finally
         {
@@ -367,7 +367,7 @@ public sealed class AppController
         RegisterRunEsc();
         try
         {
-            if (restoreFocus && !await WindowHelper.RestoreFocusAsync(target))
+            if (restoreFocus && !await _desktop.RestoreFocusAsync(target))
             {
                 _status.ShowError(Loc.Get("err_focus"), session.Anchor);
                 return;
@@ -461,11 +461,7 @@ public sealed class AppController
     }
 
     /// <summary>Runs on the UI thread: directly if already there, otherwise queued (the runner's callbacks do not promise a thread).</summary>
-    private void OnUi(Action action)
-    {
-        if (_status.Dispatcher.CheckAccess()) action();
-        else _status.Dispatcher.BeginInvoke(action);
-    }
+    private void OnUi(Action action) => _status.RunOnUi(action);
 
     // ---- last result ----
 
@@ -562,7 +558,7 @@ public sealed class AppController
     private Anchor _cardAnchor;
     private int _escHotkeyId;
     private int _copyHotkeyId;
-    private ForegroundWatcher? _watcher;
+    private IDisposable? _watcher;
 
     private static CaptureMode ModeOf(PromptDefinition prompt)
         => prompt.Output == PromptOutput.Overlay ? CaptureMode.Display : CaptureMode.Replace;
@@ -591,7 +587,7 @@ public sealed class AppController
         RegisterRunEsc(); // until the card takes Esc over
         try
         {
-            if (restoreFocus && !await WindowHelper.RestoreFocusAsync(target))
+            if (restoreFocus && !await _desktop.RestoreFocusAsync(target))
             {
                 _status.ShowError(Loc.Get("err_focus"), session.Anchor);
                 return;
@@ -714,7 +710,7 @@ public sealed class AppController
         RegisterCardHotkeys();
 
         // Installed last: it reports at once if the foreground window has already changed, which closes the card again.
-        var watcher = ForegroundWatcher.Start(target.Window, OnForegroundChanged);
+        var watcher = _desktop.WatchForeground(target.Window, OnForegroundChanged);
         if (_cardLive) _watcher = watcher;
         else watcher?.Dispose();
     }
@@ -874,17 +870,11 @@ public sealed class AppController
     private const int VK_ESCAPE = 0x1B;
 
     /// <summary>Logs the time from hotkey/choice to the first text of the card, once layout is done and once the frame is rendered.</summary>
-    private static void LogFirstText(string app, string prompt, long origin, string since)
+    private void LogFirstText(string app, string prompt, long origin, string since)
     {
         var layout = Stopwatch.GetElapsedTime(origin).TotalMilliseconds;
-        EventHandler? handler = null;
-        handler = (_, _) =>
-        {
-            CompositionTarget.Rendering -= handler;
-            AppLog.Info($"[{app}] '{prompt}' first text in the card: layout done {layout:F0} ms, "
-                + $"first frame {Stopwatch.GetElapsedTime(origin).TotalMilliseconds:F0} ms since {since}");
-        };
-        CompositionTarget.Rendering += handler;
+        _desktop.AfterNextFrame(() => AppLog.Info($"[{app}] '{prompt}' first text in the card: layout done {layout:F0} ms, "
+            + $"first frame {Stopwatch.GetElapsedTime(origin).TotalMilliseconds:F0} ms since {since}"));
     }
 
     // ---- undo ----
@@ -906,7 +896,7 @@ public sealed class AppController
             return;
         }
 
-        var target = TargetInfo.Capture();
+        var target = _desktop.CaptureTarget();
         var anchor = MakeAnchor(target);
         if (Reject(_text.PreCheck(target, null), target, anchor)) return;
         if (History.Count == 0)
@@ -1043,16 +1033,10 @@ public sealed class AppController
     };
 
     /// <summary>Logs hotkey -> first rendered frame of the overlay, which is what the user perceives as "appears".</summary>
-    private static void LogFrameLatency(long hotkeyTimestamp, string app, string anchorKind)
+    private void LogFrameLatency(long hotkeyTimestamp, string app, string anchorKind)
     {
         var shownCall = Stopwatch.GetElapsedTime(hotkeyTimestamp).TotalMilliseconds;
-        EventHandler? handler = null;
-        handler = (_, _) =>
-        {
-            CompositionTarget.Rendering -= handler;
-            var frame = Stopwatch.GetElapsedTime(hotkeyTimestamp).TotalMilliseconds;
-            AppLog.Info($"[{app}] overlay at {anchorKind}: Show() returned after {shownCall:F1} ms, first frame after {frame:F1} ms");
-        };
-        CompositionTarget.Rendering += handler;
+        _desktop.AfterNextFrame(() => AppLog.Info($"[{app}] overlay at {anchorKind}: Show() returned after {shownCall:F1} ms, "
+            + $"first frame after {Stopwatch.GetElapsedTime(hotkeyTimestamp).TotalMilliseconds:F1} ms"));
     }
 }

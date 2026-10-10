@@ -19,7 +19,7 @@ namespace Kuroko.App.Overlay;
 /// the progress pill, the first piece of the answer replaces the label, and the card grows with the text up to a
 /// maximum height, then scrolls. The progress line runs until <see cref="EndResult"/>.</para>
 /// </summary>
-public partial class StatusWindow : Window
+public partial class StatusWindow : Window, IStatusView
 {
     private static readonly TimeSpan ErrorDuration = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan InfoDuration = TimeSpan.FromSeconds(2);
@@ -89,6 +89,12 @@ public partial class StatusWindow : Window
 
     /// <summary>True while an error pill from <see cref="ShowErrorWithAction"/> is on screen.</summary>
     public bool IsActionShown => _actionPill;
+
+    public void RunOnUi(Action action)
+    {
+        if (Dispatcher.CheckAccess()) action();
+        else Dispatcher.BeginInvoke(action);
+    }
 
     /// <summary>Font size of the card text (result_font_size). Takes effect at once, also for a card that is on screen.</summary>
     public double ResultFontSize

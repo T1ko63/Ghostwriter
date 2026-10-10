@@ -155,7 +155,8 @@ public partial class App : Application
             prompts: () => _config.Current.Prompts,
             warmUp: () => _ = _providers!.WarmUpAsync(),
             hotkeys: _hotkeys,
-            clipboard: _clipboard);
+            clipboard: _clipboard,
+            desktop: new Win32Desktop());
 
         ApplyConfig(loaded, initial: true);
         Lap("apply config+hotkeys");
