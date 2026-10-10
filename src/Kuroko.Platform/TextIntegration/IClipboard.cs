@@ -9,7 +9,8 @@ public interface IClipboard
     /// <summary>Changes on every clipboard update (GetClipboardSequenceNumber).</summary>
     uint SequenceNumber { get; }
 
-    /// <summary>Waits until <see cref="SequenceNumber"/> differs from <paramref name="since"/>; false when the timeout passed first.</summary>
+    /// <summary>Waits until <see cref="SequenceNumber"/> differs from <paramref name="since"/>; false when the timeout passed first.
+    /// A cancel of <paramref name="ct"/> ends the wait at once with an <see cref="OperationCanceledException"/>.</summary>
     Task<bool> WaitForChangeAsync(uint since, TimeSpan timeout, CancellationToken ct = default);
 
     /// <summary>The plain text on the clipboard, or null (none, or the clipboard stayed locked).</summary>

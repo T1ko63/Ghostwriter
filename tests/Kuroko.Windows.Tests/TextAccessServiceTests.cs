@@ -181,6 +181,24 @@ public class TextAccessServiceTests
     }
 
     [Fact]
+    public async Task A_cancel_while_waiting_for_the_copy_ends_the_read_at_once_and_restores_the_clipboard()
+    {
+        // Nothing is selected and display mode never sends Ctrl+A, so the app never answers Ctrl+C: only the cancel
+        // can end the wait before the (deliberately long) copy timeout.
+        var service = new TextAccessService(_app, _app, _uia) { Timings = Fast with { CopyTimeout = TimeSpan.FromSeconds(5) } };
+        using var cts = new CancellationTokenSource();
+        _app.OnCopySent = cts.Cancel;
+        var started = System.Diagnostics.Stopwatch.StartNew();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => service.CaptureAsync(Target(), ReadStrategy.Clipboard, mode: CaptureMode.Display, ct: cts.Token));
+
+        Assert.True(started.Elapsed < TimeSpan.FromSeconds(1), $"took {started.Elapsed.TotalMilliseconds} ms");
+        Assert.Equal(["C"], _app.Keys);
+        Assert.Equal("user clipboard", _app.ClipboardText);
+    }
+
+    [Fact]
     public async Task Explorer_and_non_text_controls_never_get_ctrl_a()
     {
         _app.FieldText = "files";
