@@ -1,0 +1,31 @@
+name: Build and test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore Kuroko.slnx
+
+      # Directory.Build.props sets TreatWarningsAsErrors, so any warning fails this step.
+      - name: Build (Release)
+        run: dotnet build Kuroko.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test Kuroko.slnx -c Release --no-build
