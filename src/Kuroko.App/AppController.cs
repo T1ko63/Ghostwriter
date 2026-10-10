@@ -34,6 +34,7 @@ public sealed class AppController
     private readonly LastResult _lastResult;
     private readonly RunState _run;
     private readonly ResultCard _card;
+    private readonly LatencyLog _latency;
 
     /// <param name="prompts">Read on every use, so a reloaded prompts.toml is picked up without rebuilding anything.</param>
     /// <param name="hotkeys">Needed for the temporary hotkeys: Esc during a run, Esc and copy while the result card is up.</param>
@@ -52,6 +53,7 @@ public sealed class AppController
         _warmUp = warmUp;
         _desktop = desktop ?? new Win32Desktop();
         _run = new RunState(_desktop, hotkeys);
+        _latency = new LatencyLog(_desktop);
         _card = new ResultCard(status, _desktop, hotkeys, clipboard, _run, () => ResultCopyHotkey);
         _lastResult = new LastResult(status, hotkeys, clipboard, () => ResultCopyHotkey);
 
@@ -248,7 +250,7 @@ public sealed class AppController
         _session = session;
         _overlay.Present(_prompts());
         _overlay.ShowAnchored(session.Anchor);
-        LogFrameLatency(hotkeyTimestamp, session.Target!.ProcessName, anchorKind);
+        _latency.OverlayShown(hotkeyTimestamp, session.Target!.ProcessName, anchorKind);
 
         // The time the user needs to pick a prompt is used to have the connection to the AI provider ready.
         _warmUp?.Invoke();
@@ -400,13 +402,7 @@ public sealed class AppController
             AppLog.Info($"[{target.ProcessName}] '{prompt.Name}' ({prompt.Mode}) ok via {capture.UsedStrategy}/{capture.Origin}, "
                 + $"{capture.Text.Length} chars -> {output.Length} chars, read {capture.Duration.TotalMilliseconds:F0} ms, "
                 + $"replace {replaced.Duration.TotalMilliseconds:F0} ms, total since {since} {Stopwatch.GetElapsedTime(origin).TotalMilliseconds:F0} ms");
-            if (timings.Sent != 0)
-            {
-                // "request started" is the number the user feels: from hotkey/choice to the moment the request left the app.
-                AppLog.Info($"  timing since {since}: request sent {LlmTimings.Ms(origin, timings.Sent):F0} ms, "
-                    + $"response headers +{LlmTimings.Ms(timings.Sent, timings.Headers):F0} ms, first text +{LlmTimings.Ms(timings.Headers, timings.FirstToken):F0} ms, "
-                    + $"answer complete +{LlmTimings.Ms(timings.FirstToken, timings.Done):F0} ms (attempts: {timings.Attempts})");
-            }
+            LatencyLog.Request(timings, origin, since);
         }
         catch (OperationCanceledException)
         {
@@ -509,7 +505,7 @@ public sealed class AppController
                 if (!_run.IsCurrent(cts)) return; // the card was closed or replaced: this run is obsolete
 
                 _card.Append(piece);
-                if (pieces++ == 0) LogFirstText(target.ProcessName, prompt.Name, origin, since);
+                if (pieces++ == 0) _latency.FirstText(target.ProcessName, prompt.Name, origin, since);
             }
 
             if (!_run.IsCurrent(cts)) return;
@@ -520,12 +516,7 @@ public sealed class AppController
             AppLog.Info($"[{target.ProcessName}] '{prompt.Name}' ({prompt.Mode}, overlay) ok via {capture.UsedStrategy}/{capture.Origin}, "
                 + $"{capture.Text.Length} chars -> {answer.Length} chars, read {capture.Duration.TotalMilliseconds:F0} ms, "
                 + $"total since {since} {Stopwatch.GetElapsedTime(origin).TotalMilliseconds:F0} ms");
-            if (timings.Sent != 0)
-            {
-                AppLog.Info($"  timing since {since}: request sent {LlmTimings.Ms(origin, timings.Sent):F0} ms, "
-                    + $"response headers +{LlmTimings.Ms(timings.Sent, timings.Headers):F0} ms, first text +{LlmTimings.Ms(timings.Headers, timings.FirstToken):F0} ms, "
-                    + $"answer complete +{LlmTimings.Ms(timings.FirstToken, timings.Done):F0} ms (attempts: {timings.Attempts})");
-            }
+            LatencyLog.Request(timings, origin, since);
         }
         catch (OperationCanceledException)
         {
@@ -576,14 +567,6 @@ public sealed class AppController
         _card.RestoreAfterReload();
         _run.RestoreAfterReload(_card.IsLive);
         _lastResult.RestoreAfterReload();
-    }
-
-    /// <summary>Logs the time from hotkey/choice to the first text of the card, once layout is done and once the frame is rendered.</summary>
-    private void LogFirstText(string app, string prompt, long origin, string since)
-    {
-        var layout = Stopwatch.GetElapsedTime(origin).TotalMilliseconds;
-        _desktop.AfterNextFrame(() => AppLog.Info($"[{app}] '{prompt}' first text in the card: layout done {layout:F0} ms, "
-            + $"first frame {Stopwatch.GetElapsedTime(origin).TotalMilliseconds:F0} ms since {since}"));
     }
 
     // ---- undo ----
@@ -695,13 +678,5 @@ public sealed class AppController
     {
         AppLog.Info($"[{session.Target?.ProcessName}] {logLine}");
         _status.ShowError(message, session.Anchor);
-    }
-
-    /// <summary>Logs hotkey -> first rendered frame of the overlay, which is what the user perceives as "appears".</summary>
-    private void LogFrameLatency(long hotkeyTimestamp, string app, string anchorKind)
-    {
-        var shownCall = Stopwatch.GetElapsedTime(hotkeyTimestamp).TotalMilliseconds;
-        _desktop.AfterNextFrame(() => AppLog.Info($"[{app}] overlay at {anchorKind}: Show() returned after {shownCall:F1} ms, "
-            + $"first frame after {Stopwatch.GetElapsedTime(hotkeyTimestamp).TotalMilliseconds:F1} ms"));
     }
 }
