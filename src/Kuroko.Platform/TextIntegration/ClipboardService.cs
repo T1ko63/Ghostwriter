@@ -203,6 +203,11 @@ public sealed class ClipboardService : IDisposable
         }
     }
 
+    /// <summary>
+    /// Puts a snapshot back. The content is already in clipboard history (and cloud sync) from when it was first copied, so
+    /// the restored copy is marked to stay out of both; otherwise every run would add a duplicate entry. Its own privacy
+    /// formats are replaced by ours.
+    /// </summary>
     public bool TryRestore(ClipboardSnapshot snapshot)
     {
         if (!TryOpen()) return false;
@@ -212,6 +217,8 @@ public sealed class ClipboardService : IDisposable
             lock (_gate) _offer = null;
             foreach (var (format, data) in snapshot.Items)
             {
+                if (IsPrivacyFormat(format)) continue;
+
                 var memory = GlobalAlloc(GMEM_MOVEABLE, (nuint)data.Length);
                 if (memory == 0) continue;
                 var ptr = GlobalLock(memory);
@@ -226,6 +233,8 @@ public sealed class ClipboardService : IDisposable
                 if (SetClipboardData(format, memory) == 0) GlobalFree(memory);
             }
 
+            // An empty clipboard stays empty: privacy formats alone would make it look as if it held something.
+            if (snapshot.Items.Any(i => !IsPrivacyFormat(i.Format))) AddPrivacyFormats();
             return true;
         }
         finally
@@ -271,6 +280,9 @@ public sealed class ClipboardService : IDisposable
         GlobalUnlock(memory);
         return memory;
     }
+
+    private static bool IsPrivacyFormat(uint format)
+        => format != 0 && (format == FmtExcludeFromMonitor || format == FmtCanIncludeInHistory || format == FmtCanUploadToCloud);
 
     private static void AddPrivacyFormats()
     {

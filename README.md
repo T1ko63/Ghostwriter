@@ -55,6 +55,7 @@ Store API keys in the Windows Credential Manager from the tray menu instead of k
 | Run the Universal prompt directly (write **and** edit) | `Ctrl+Alt+M` |
 | Run another prompt directly | per prompt in `prompts.toml`, e.g. `Ctrl+Alt+K` for Correction |
 | Undo the last replacement | `Ctrl+Alt+Z` |
+| Cancel a running request | `Esc`, only while a request is running |
 | Close the result card (cancels a running request) | `Esc`, only while a card is visible |
 | Copy the result card and close it | `Ctrl+Alt+C`, only while a card is visible |
 
@@ -79,7 +80,8 @@ texts over 50,000 characters are not supported.
   They are masked in error messages and never logged.
 * **Stored on disk:** `settings.toml`, `prompts.toml` and `kuroko.log` in `%APPDATA%\Kuroko`. The log holds timings,
   text lengths, the target program’s name and prompt names, never your text, results or keys. Undo history and the
-  saved clipboard stay in memory only; what Kuroko puts on the clipboard is kept out of clipboard history and cloud sync.
+  saved clipboard stay in memory only; what Kuroko puts on the clipboard, including your previous content when it is
+  put back, is kept out of clipboard history and cloud sync, so a run adds no duplicate entries.
 
 Details are in the German guide under [Datenschutz](docs/README.md#datenschutz).
 

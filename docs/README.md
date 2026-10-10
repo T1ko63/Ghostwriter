@@ -16,6 +16,7 @@ Audit-Bericht vom Oktober 2026 in [`refactoring-report.md`](refactoring-report.m
 | „Universal" direkt ausführen (schreiben **und** bearbeiten) | `Ctrl+Alt+M` |
 | Anderen Prompt direkt ausführen (z. B. „Correction") | pro Prompt in `prompts.toml`, Standard `Ctrl+Alt+K` |
 | Letzte Ersetzung rückgängig machen | `Ctrl+Alt+Z` (`undo_hotkey`) |
+| Laufende Anfrage abbrechen | `Esc`, nur solange eine Anfrage läuft |
 | Ergebnis-Karte schließen (und eine laufende Anfrage abbrechen) | `Esc`, nur solange eine Karte sichtbar ist |
 | Ergebnis-Karte kopieren und schließen | `Ctrl+Alt+C` (`result_copy_hotkey`), nur solange eine Karte sichtbar ist |
 
@@ -280,7 +281,9 @@ Rechner), in einer Umgebungsvariable oder im Klartext in `settings.toml`.
 **Nur im Arbeitsspeicher, beim Beenden weg:** die Rückgängig-Liste (Original und Ergebnis der letzten `undo_history`
 Ersetzungen) und die gesicherte Zwischenablage während einer Ersetzung. Was Kuroko selbst kurz in die Zwischenablage legt
 (Erkennungstext beim Kopieren, Ergebnis beim Einfügen), ist für den Windows-Zwischenablageverlauf und die Cloud-Synchronisierung
-gesperrt. Nur `Ctrl+Alt+C` in der Ergebnis-Karte legt den Text wie ein normales Kopieren ab.
+gesperrt. Das gilt auch für deinen vorherigen Inhalt, wenn Kuroko ihn danach zurückschreibt: Er steht schon im Verlauf, ein Lauf
+erzeugt also keinen Doppel-Eintrag. Kopiert die Ziel-App beim Lesen per `Strg+C` die Markierung, landet diese allerdings im
+Verlauf (das macht die Ziel-App, nicht Kuroko). Nur `Ctrl+Alt+C` in der Ergebnis-Karte legt den Text wie ein normales Kopieren ab.
 
 **Bewusst ausgelassen:** Passwortfelder, Terminals und Fenster mit Administratorrechten liest Kuroko nicht.
 
@@ -321,6 +324,10 @@ KI-Antwort vollständig und fehlerfrei da ist. Bei Overlay-Ausgabe wird nichts e
 **Bewusst nicht unterstützt:** Passwortfelder, schreibgeschützte Felder (nur beim Ersetzen; für die Ergebnis-Karte sind sie erlaubt),
 Terminals (Strg+C würde das laufende Programm abbrechen), Fenster mit Administratorrechten (Windows blockiert Eingaben von außen),
 Texte über 50.000 Zeichen.
+
+**Esc während einer Anfrage:** Solange Kuroko liest oder auf die Antwort wartet, ist `Esc` global registriert und bricht ab
+(wie ein Klick auf die Statuspille); in dieser Zeit geht `Esc` nicht an andere Apps. Ist der Einfügen-Befehl schon gesendet,
+wird nicht mehr abgebrochen. Danach wird `Esc` sofort wieder freigegeben.
 
 **Grenzen der Ergebnis-Karte:** Sie liest nur markierten Text (siehe oben), ohne Auswahl kein Ganztext in Browsern. `Esc` und der
 Kopier-Hotkey werden global abgefangen, solange die Karte sichtbar ist, und gehen in dieser Zeit nicht an andere Apps. Das Mausrad

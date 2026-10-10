@@ -309,3 +309,14 @@ Performance (D1, D2, D4), Warnungs-Hygiene (F1).
   früh zurücksetzen).
 - Fehler aus Tray-Menü oder Hotkey beenden die App nicht mehr, sondern zeigen „Unerwarteter Fehler: …“.
 - Sonst nichts: Hotkeys, Prompt-Modi, Marker-Syntax, TOML-Formate und Abläufe sind unverändert.
+
+---
+
+## Nachtrag (2026-10-10): zwei Empfehlungen umgesetzt
+- **Esc während der Anfrage:** `Esc` wird für die Dauer eines Laufs als temporärer Hotkey registriert (wie bei der
+  Ergebnis-Karte) und wirkt wie ein Klick auf die Statuspille; nach dem Einfügen-Befehl wird weiterhin nicht abgebrochen.
+  Bei Overlay-Ausgabe übernimmt die Karte `Esc`, sobald der Text gelesen ist. `AppController.RegisterRunEsc`.
+- **Zwischenablageverlauf (P3):** Der zurückgeschriebene Snapshot wird mit `CanIncludeInClipboardHistory=0`,
+  `CanUploadToCloudClipboard=0` und `ExcludeClipboardContentFromMonitorProcessing` markiert, damit kein Doppel-Eintrag
+  entsteht. Ein leerer Snapshot bleibt leer. `ClipboardService.TryRestore`. Dass die Ziel-App beim Strg+C die Markierung
+  in den Verlauf legt, bleibt unvermeidbar.
