@@ -1,6 +1,5 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "kuroko-prompts.schema.json",
   "title": "Kuroko prompts.toml",
   "description": "Prompts for Kuroko (%APPDATA%\\Kuroko\\prompts.toml). One [[prompt]] block per prompt. Mirrors src/Kuroko.Core/Config/PromptsLoader.cs; the app itself reports errors with file and line.",
   "type": "object",

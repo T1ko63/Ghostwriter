@@ -130,17 +130,20 @@ unabhängig davon selbst und meldet Fehler mit Datei und Zeile; das Schema ist n
   Kommentar, die App ignoriert ihn. Zusätzlich ordnet [`.taplo.toml`](.taplo.toml) die Dateien den Schemas zu, damit auch
   `taplo check` im Repository-Ordner funktioniert.
 * Für die echten Dateien in `%APPDATA%\Kuroko\` entweder die passende Zeile als erste Zeile einfügen, mit absolutem Pfad zum
-  Repository, z. B. `#:schema file:///C:/Users/<name>/Documents/Kuroko/schemas/settings.schema.json`, oder in den
+  Repository, z. B. `#:schema file:///C:/Pfad/zum/Repository/schemas/settings.schema.json`, oder in den
   VSCodium-Einstellungen (`settings.json`) zuordnen:
 
   ```json
   "evenBetterToml.schema.associations": {
-    ".*/Kuroko/settings\\.toml$": "file:///C:/Users/<name>/Documents/Kuroko/schemas/settings.schema.json",
-    ".*/Kuroko/prompts\\.toml$": "file:///C:/Users/<name>/Documents/Kuroko/schemas/prompts.schema.json"
+    ".*/Kuroko/settings\\.toml$": "file:///C:/Pfad/zum/Repository/schemas/settings.schema.json",
+    ".*/Kuroko/prompts\\.toml$": "file:///C:/Pfad/zum/Repository/schemas/prompts.schema.json"
   }
   ```
 
-  Kuroko lässt die Zeile beim Zurückschreiben einer Einstellung (z. B. Autostart) stehen.
+  `C:/Pfad/zum/Repository` durch den echten Ordner des Repositorys ersetzen (Schrägstriche `/`). Kuroko lässt eine
+  `#:schema`-Zeile beim Zurückschreiben einer Einstellung (z. B. Autostart) stehen. Bleibt die Vervollständigung aus
+  (VSCodium schlägt dann nur Wörter aus der Datei vor), steht der Grund unter Ausgabe → „Even Better TOML LSP“, z. B.
+  `failed to load schema … no such file or directory` bei einem falschen Pfad.
 * Ändert sich ein Schlüssel oder ein erlaubter Wert im Code, das Schema mit anpassen: `SchemaTests` prüft, dass Schemas,
   Vorlagen und Loader zusammenpassen.
 

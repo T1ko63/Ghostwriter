@@ -1,6 +1,5 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "kuroko-settings.schema.json",
   "title": "Kuroko settings.toml",
   "description": "Settings for Kuroko (%APPDATA%\\Kuroko\\settings.toml). Mirrors src/Kuroko.Core/Config/SettingsLoader.cs and AppearanceLoader.cs; the app itself reports errors with file and line. General settings must stand above the first [table] line.",
   "type": "object",
