@@ -118,6 +118,32 @@ Vollständige Vorlagen mit allen Schlüsseln, Standardwerten und kurzen Kommenta
 Zum Verwenden nach `%APPDATA%\Kuroko\` kopieren und `.example` aus dem Namen entfernen. Die Vorlagen enthalten keine
 API-Schlüssel; Schlüssel nie ins Repository einchecken.
 
+### Editor-Unterstützung (JSON-Schema)
+
+Für beide Dateien liegt ein JSON-Schema unter [`schemas/`](schemas/): `settings.schema.json` und `prompts.schema.json`.
+Editoren mit [Taplo](https://taplo.tamasfe.dev/), etwa VSCodium/VS Code mit der Erweiterung **Even Better TOML**, zeigen
+damit Vervollständigung, Beschreibungen beim Überfahren und Fehler wie unbekannte Schlüssel, falsche Typen, Werte außerhalb
+der erlaubten Liste (`mode`, `output`, `theme`, Positionen …) oder Zahlen außerhalb des Bereichs. Die App prüft beim Laden
+unabhängig davon selbst und meldet Fehler mit Datei und Zeile; das Schema ist nur eine Hilfe beim Schreiben.
+
+* Die Vorlagen in `config/` verweisen in der ersten Zeile per `#:schema ../schemas/….schema.json` darauf. Für TOML ist das ein
+  Kommentar, die App ignoriert ihn. Zusätzlich ordnet [`.taplo.toml`](.taplo.toml) die Dateien den Schemas zu, damit auch
+  `taplo check` im Repository-Ordner funktioniert.
+* Für die echten Dateien in `%APPDATA%\Kuroko\` entweder die passende Zeile als erste Zeile einfügen, mit absolutem Pfad zum
+  Repository, z. B. `#:schema file:///C:/Users/<name>/Documents/Kuroko/schemas/settings.schema.json`, oder in den
+  VSCodium-Einstellungen (`settings.json`) zuordnen:
+
+  ```json
+  "evenBetterToml.schema.associations": {
+    ".*/Kuroko/settings\\.toml$": "file:///C:/Users/<name>/Documents/Kuroko/schemas/settings.schema.json",
+    ".*/Kuroko/prompts\\.toml$": "file:///C:/Users/<name>/Documents/Kuroko/schemas/prompts.schema.json"
+  }
+  ```
+
+  Kuroko lässt die Zeile beim Zurückschreiben einer Einstellung (z. B. Autostart) stehen.
+* Ändert sich ein Schlüssel oder ein erlaubter Wert im Code, das Schema mit anpassen: `SchemaTests` prüft, dass Schemas,
+  Vorlagen und Loader zusammenpassen.
+
 ### API-Schlüssel
 
 Am einfachsten über das Tray-Symbol → **API-Schlüssel …**: Anbieter wählen, Schlüssel einfügen, Speichern. Der Schlüssel

@@ -1,3 +1,4 @@
+#:schema ../schemas/settings.schema.json
 # Kuroko - example settings.toml
 #
 # Template with every key and its default value. The app does not read this file.

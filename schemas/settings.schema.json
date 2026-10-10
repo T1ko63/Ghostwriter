@@ -1,0 +1,298 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "kuroko-settings.schema.json",
+  "title": "Kuroko settings.toml",
+  "description": "Settings for Kuroko (%APPDATA%\\Kuroko\\settings.toml). Mirrors src/Kuroko.Core/Config/SettingsLoader.cs and AppearanceLoader.cs; the app itself reports errors with file and line. General settings must stand above the first [table] line.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "overlay_hotkey": {
+      "allOf": [{ "$ref": "#/definitions/hotkey" }],
+      "default": "Ctrl+Shift+Space",
+      "description": "Global hotkey that opens the overlay."
+    },
+    "undo_hotkey": {
+      "allOf": [{ "$ref": "#/definitions/hotkey" }],
+      "default": "Ctrl+Alt+Z",
+      "description": "Undoes the last replacement (press again to go further back)."
+    },
+    "undo_history": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "default": 10,
+      "description": "Number of replacements kept in memory (0 = undo off)."
+    },
+    "result_copy_hotkey": {
+      "allOf": [{ "$ref": "#/definitions/hotkey" }],
+      "not": { "pattern": "^\\s*([Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Ss][Tt][Rr][Gg])\\s*\\+\\s*[AaCcVv]\\s*$" },
+      "default": "Ctrl+Alt+C",
+      "description": "Copies the whole text of the result card and closes it. Plain Ctrl+C, Ctrl+A and Ctrl+V are not allowed: the app sends those keys itself when it reads text."
+    },
+    "result_position": {
+      "type": "string",
+      "enum": ["fixed", "follow", "caret", "mouse", "center"],
+      "default": "fixed",
+      "description": "Where the result card appears. fixed: at result_fixed_position. follow: where the prompt picker opens. caret: at the text cursor, otherwise at the mouse. mouse: at the mouse. center is the old name of fixed."
+    },
+    "result_fixed_position": {
+      "allOf": [{ "$ref": "#/definitions/spot" }],
+      "default": "bottom-third",
+      "description": "The fixed place of the result card (result_position = \"fixed\")."
+    },
+    "result_screen_margin": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 200,
+      "default": 24,
+      "description": "Distance of the result card to the screen edge in pixels."
+    },
+    "result_font_size": {
+      "type": "number",
+      "minimum": 8,
+      "maximum": 32,
+      "default": 15,
+      "description": "Font size of the result card text (decimals such as 14.5 are fine)."
+    },
+    "result_width": {
+      "type": "number",
+      "minimum": 240,
+      "maximum": 1600,
+      "default": 480,
+      "description": "Width of the result card in pixels (never larger than the monitor)."
+    },
+    "result_min_height": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2000,
+      "default": 0,
+      "description": "Minimum height of the result card (0 = as small as the text). Must not be larger than result_max_height."
+    },
+    "result_max_height": {
+      "type": "number",
+      "minimum": 120,
+      "maximum": 2000,
+      "default": 360,
+      "description": "Maximum height of the result card; longer text scrolls."
+    },
+    "marker_start": {
+      "type": "string",
+      "minLength": 1,
+      "default": "<<",
+      "description": "Start of a one-off instruction inside the text (prompts with mode = \"universal\"). Must not be empty."
+    },
+    "marker_end": {
+      "type": "string",
+      "minLength": 1,
+      "default": ">>",
+      "description": "End of a one-off instruction inside the text. Must not be empty."
+    },
+    "theme": {
+      "type": "string",
+      "enum": ["system", "light", "dark"],
+      "default": "system"
+    },
+    "accent": {
+      "type": "string",
+      "pattern": "^\\s*([Nn][Oo][Nn][Ee]|[Ss][Yy][Ss][Tt][Ee][Mm]|#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6}|[0-9A-Fa-f]{8}))\\s*$",
+      "default": "none",
+      "description": "Caret, text selection and progress line colour: none, system or a hex colour like \"#3B82F6\" (#RGB, #RRGGBB, #AARRGGBB; alpha is ignored).",
+      "examples": ["none", "system", "#3B82F6"]
+    },
+    "overlay_position": {
+      "type": "string",
+      "enum": ["caret", "mouse", "fixed", "center"],
+      "default": "caret",
+      "description": "Where the prompt picker opens. fixed: at overlay_fixed_position. center is the old name of fixed."
+    },
+    "overlay_fixed_position": {
+      "allOf": [{ "$ref": "#/definitions/spot" }],
+      "default": "top-third",
+      "description": "The fixed place of the prompt picker (overlay_position = \"fixed\")."
+    },
+    "overlay_screen_margin": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 200,
+      "default": 8,
+      "description": "Distance of the prompt picker to the screen edge in pixels."
+    },
+    "overlay_font_size": {
+      "type": "number",
+      "minimum": 8,
+      "maximum": 32,
+      "default": 14.5,
+      "description": "Font size of the prompt picker; the whole picker scales with it."
+    },
+    "overlay_width": {
+      "type": "number",
+      "minimum": 240,
+      "maximum": 1600,
+      "default": 520,
+      "description": "Width of the prompt picker in pixels (never larger than the monitor)."
+    },
+    "overlay_min_height": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2000,
+      "default": 0,
+      "description": "Minimum height of the prompt picker (0 = as small as the list). Must not be larger than overlay_max_height."
+    },
+    "overlay_max_height": {
+      "type": "number",
+      "minimum": 120,
+      "maximum": 2000,
+      "default": 393,
+      "description": "Maximum height of the prompt picker; longer lists scroll."
+    },
+    "language": {
+      "type": "string",
+      "enum": ["auto", "de", "en"],
+      "default": "auto"
+    },
+    "autostart": {
+      "type": "boolean",
+      "default": false,
+      "description": "Start with Windows."
+    },
+    "idle_trim_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 90,
+      "description": "Free unused memory after this many idle seconds (0 = never)."
+    },
+    "default_provider": {
+      "type": "string",
+      "description": "Provider used when a prompt does not name one. Must exist under [providers.*]. Empty or missing: the first provider."
+    },
+    "appearance": { "$ref": "#/definitions/appearance" },
+    "providers": {
+      "type": "object",
+      "description": "One [providers.<name>] block per provider. The name is free and is used by default_provider and by the provider key in prompts.toml.",
+      "additionalProperties": { "$ref": "#/definitions/provider" }
+    }
+  },
+  "definitions": {
+    "hotkey": {
+      "type": "string",
+      "description": "Modifiers Ctrl (Control, Strg), Alt, Shift (Umschalt), Win (Windows) joined with + and a key: A-Z, 0-9, F1-F24, Space, Enter, Tab, Esc, Backspace, Insert, Delete, Home, End, PageUp, PageDown, Left, Up, Right, Down or one of ; = , - . / ` [ \\ ] '. At least one modifier unless the key is F1-F24.",
+      "pattern": "^\\s*([A-Za-z]+\\s*\\+\\s*)*([A-Za-z0-9]+|[;=,\\-./`\\[\\]\\\\'])\\s*$",
+      "examples": ["Ctrl+Shift+Space", "Ctrl+Alt+K", "F8"]
+    },
+    "spot": {
+      "type": "string",
+      "enum": ["top-third", "center", "bottom-third", "top-left", "bottom-left", "top-right", "bottom-right", "left", "right", "top", "bottom"],
+      "description": "top-third | center | bottom-third: horizontally centered, in the middle of that third. Corners: top-left | bottom-left | top-right | bottom-right. left | right: at that edge, vertically centered. top | bottom: at that edge, horizontally centered."
+    },
+    "appearance": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Look of the overlay and the result card. A bad value only gives a warning; the default is used for it.",
+      "properties": {
+        "transparency": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 50,
+          "description": "Percent: 0 = opaque, 100 = fully transparent."
+        },
+        "radius": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 10,
+          "description": "Corner radius in px."
+        },
+        "blur": {
+          "type": "string",
+          "enum": ["acrylic", "blur", "mica", "micaalt", "none"],
+          "default": "acrylic"
+        },
+        "border": {
+          "type": "boolean",
+          "default": true,
+          "description": "Thin border around the window."
+        },
+        "custom_corners": {
+          "type": "boolean",
+          "default": false,
+          "description": "true: apply the radius exactly on Acrylic/Mica too (needs the Windhawk mod, corners part). false: Windows snaps to 0, 4 or 8 px."
+        },
+        "dark": { "$ref": "#/definitions/themeColors" },
+        "light": { "$ref": "#/definitions/themeColors" }
+      }
+    },
+    "themeColors": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "allOf": [{ "$ref": "#/definitions/opaqueColor" }],
+          "description": "Window background: #RRGGBB or rgb(r, g, b). Transparency is set by [appearance] transparency."
+        },
+        "foreground": {
+          "allOf": [{ "$ref": "#/definitions/opaqueColor" }],
+          "description": "Main text colour: #RRGGBB or rgb(r, g, b)."
+        },
+        "selection": {
+          "type": "string",
+          "pattern": "^\\s*(#[0-9A-Fa-f]{6}|#[0-9A-Fa-f]{8}|[Rr][Gg][Bb][Aa]?\\(\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*(,\\s*\\d*\\.?\\d+%?\\s*)?\\))\\s*$",
+          "description": "Selected row: #AARRGGBB (alpha first), #RRGGBB or rgba(r, g, b, a) with a from 0 to 1.",
+          "examples": ["#40FFFFFF", "rgba(255, 255, 255, 0.25)"]
+        }
+      }
+    },
+    "opaqueColor": {
+      "type": "string",
+      "pattern": "^\\s*(#[0-9A-Fa-f]{6}|[Rr][Gg][Bb]\\(\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*,\\s*\\d{1,3}\\s*\\))\\s*$",
+      "examples": ["#000000", "rgb(240, 240, 240)"]
+    },
+    "provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "model"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["openai", "gemini", "anthropic", "openai-compatible"],
+          "description": "openai-compatible: local servers such as Ollama or LM Studio (no key needed)."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model name."
+        },
+        "base_url": {
+          "type": "string",
+          "pattern": "^\\s*[Hh][Tt][Tt][Pp][Ss]?://",
+          "description": "Optional, defaults per type. http:// only for local hosts when an API key is configured."
+        },
+        "api_key_env": {
+          "type": "string",
+          "description": "Name of the environment variable that holds the key."
+        },
+        "api_key": {
+          "type": "string",
+          "description": "Key written directly in the file (local only, never commit). Order: api_key, then api_key_env, then the Windows Credential Manager entry \"Kuroko:<name>\"."
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 600,
+          "default": 30
+        },
+        "reasoning": {
+          "type": "string",
+          "enum": ["off", "default", "low", "medium", "high"],
+          "default": "off"
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "0 = automatic."
+        }
+      }
+    }
+  }
+}

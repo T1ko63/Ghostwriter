@@ -28,7 +28,7 @@ A Raycast-inspired overlay offers fuzzy search and number-key shortcuts for acce
 A dedicated Windhawk C++ mod adds DWM blur effects without affecting the C# core’s performance.
 
 ### TOML configuration
-Manage providers, models, hotkeys, and custom prompts in two readable TOML files. Changes apply as soon as you save.
+Manage providers, models, hotkeys, and custom prompts in two readable TOML files. Changes apply as soon as you save. JSON schemas in `schemas/` give completion and checks in editors with Taplo (e.g. Even Better TOML).
 
 ### Secure API keys
 Store API keys in the Windows Credential Manager from the tray menu instead of keeping them in plain text.

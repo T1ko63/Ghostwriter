@@ -1,0 +1,10 @@
+# Taplo (CLI and the "Even Better TOML" extension): maps the example configs to their JSON schemas.
+# The example files also carry a "#:schema" line, which wins; these rules keep `taplo check` working from the repository root.
+
+[[rule]]
+include = ["config/prompts.example.toml", "**/prompts.toml"]
+schema.path = "./schemas/prompts.schema.json"
+
+[[rule]]
+include = ["config/settings.example.toml", "**/settings.toml"]
+schema.path = "./schemas/settings.schema.json"
