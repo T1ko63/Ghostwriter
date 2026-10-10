@@ -1,4 +1,5 @@
 using Kuroko.App;
+using Kuroko.Core.Hotkeys;
 using Kuroko.Core.Localization;
 using Kuroko.Core.Prompts;
 using Kuroko.Core.Providers;
@@ -611,6 +612,74 @@ public class AppControllerTests
 
         Assert.Equal($"info: {Loc.Get("undo_changed")}", _status.Last);
         Assert.Single(_text.Replacements);
+    });
+
+    // ---- configuration reload ----
+
+    [Fact]
+    public void A_reload_during_a_run_hands_esc_back_and_takes_it_again() => UiThread.Run(async () =>
+    {
+        var controller = Controller();
+        _runner.AutoAnswer = null;
+        controller.OnPromptHotkey(0, Fix);
+        await UiThread.Until(() => _runner.Waiting, "AI call");
+
+        controller.ReleaseResultHotkeys();
+        Assert.Equal(0, _hotkeys.Count);
+        controller.RestoreResultHotkeys();
+        Assert.True(_hotkeys.IsRegistered(FakeHotkeys.Esc));
+
+        _hotkeys.Press(FakeHotkeys.Esc);
+        await Idle(controller);
+        Assert.Empty(_text.Replacements);
+        Assert.Equal(0, _hotkeys.Count);
+    });
+
+    [Fact]
+    public void A_reload_while_the_card_is_up_registers_its_keys_again_with_the_new_copy_hotkey() => UiThread.Run(async () =>
+    {
+        var controller = Controller();
+        controller.OnPromptHotkey(0, Explain);
+        await UiThread.Until(() => _runner.Waiting, "stream");
+        _runner.Piece("It means this.");
+        _runner.EndStream();
+        await UiThread.Until(() => _status.Last == "end", "end of answer");
+
+        controller.ReleaseResultHotkeys();
+        Assert.Equal(0, _hotkeys.Count);
+        controller.ResultCopyHotkey = "Ctrl+Alt+K";
+        controller.RestoreResultHotkeys();
+
+        var newCopy = HotkeyGesture.Parse("Ctrl+Alt+K");
+        Assert.True(_hotkeys.IsRegistered(FakeHotkeys.Esc));
+        Assert.True(_hotkeys.IsRegistered(newCopy));
+        Assert.Equal(2, _hotkeys.Count); // the card's Esc only: the run handed Esc over when the card opened
+
+        _hotkeys.Press(newCopy);
+        Assert.Equal("It means this.", _clipboard.ClipboardText);
+        Assert.Equal(0, _hotkeys.Count);
+    });
+
+    [Fact]
+    public void A_reload_keeps_the_copy_offer_of_the_error_pill_only_while_the_pill_is_up() => UiThread.Run(async () =>
+    {
+        var controller = Controller();
+        _runner.AutoAnswer = "the answer";
+        _text.ReplaceFailure = ReplaceFailure.TargetChanged;
+        controller.OnPromptHotkey(0, Fix);
+        await Idle(controller);
+        Assert.True(_hotkeys.IsRegistered(FakeHotkeys.Copy));
+
+        controller.ReleaseResultHotkeys();
+        Assert.Equal(0, _hotkeys.Count);
+        controller.RestoreResultHotkeys();
+        Assert.True(_hotkeys.IsRegistered(FakeHotkeys.Copy));
+
+        _hotkeys.Press(FakeHotkeys.Copy); // the info pill ends the error pill and its hotkey
+        Assert.Equal("the answer", _clipboard.ClipboardText);
+        controller.ReleaseResultHotkeys();
+        controller.RestoreResultHotkeys();
+        Assert.Equal(0, _hotkeys.Count);
     });
 
     // ---- notices ----
