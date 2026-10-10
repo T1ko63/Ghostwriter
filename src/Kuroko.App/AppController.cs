@@ -10,6 +10,7 @@ using Kuroko.Core.Providers;
 using Kuroko.Core.Undo;
 using Kuroko.Platform.Hotkeys;
 using Kuroko.Platform.TextIntegration;
+using static Kuroko.App.FailureMessages;
 
 namespace Kuroko.App;
 
@@ -412,28 +413,15 @@ public sealed class AppController
             _status.HideStatus();
             AppLog.Info(output is null ? "Run cancelled by the user." : "Run cancelled by the user before the paste; the answer is kept for copying.");
         }
-        catch (MarkerException ex)
+        catch (Exception ex) when (output is null || ex is MarkerException or LlmException)
         {
-            // An unclosed or empty marker: nothing was sent, nothing was changed.
-            AppLog.Info($"[{target.ProcessName}] '{prompt.Name}': marker {ex.Status}");
-            _status.ShowError(ex.Status == MarkerStatus.Empty
-                ? Loc.Get("err_marker_empty")
-                : Loc.Get("err_marker_unclosed", ex.Start, ex.End), session.Anchor);
-        }
-        catch (LlmException ex)
-        {
-            // Nothing was pasted: the original text is untouched.
-            // A rejected request may quote parts of the user's text back; that detail is shown, but not written to the log.
-            var logDetail = ex.Kind == LlmErrorKind.BadRequest ? string.Empty : ex.Detail;
-            AppLog.Warn($"AI call failed: {ex.Provider}: {ex.Kind} (HTTP {ex.StatusCode?.ToString() ?? "-"}) {logDetail}");
-            _status.ShowError(Describe(ex), session.Anchor);
+            FailureMessages.Report(_status, ex, prompt, target, session.Anchor);
         }
         catch (Exception ex)
         {
+            // The answer is complete: the failure must not lose it.
             AppLog.Error("Run failed.", ex);
-            var message = Loc.Get("err_unexpected", ex.GetType().Name);
-            if (output is null) _status.ShowError(message, session.Anchor);
-            else ShowRescue(message, session.Anchor);
+            ShowRescue(FailureMessages.Unexpected(ex), session.Anchor);
         }
         finally
         {
@@ -644,7 +632,7 @@ public sealed class AppController
         }
         catch (Exception ex)
         {
-            if (ReferenceEquals(_runCts, cts)) ReportFailure(ex, prompt, target, session.Anchor);
+            if (ReferenceEquals(_runCts, cts)) FailureMessages.Report(_status, ex, prompt, target, session.Anchor);
             else AppLog.Info($"[{target.ProcessName}] '{prompt.Name}': obsolete overlay run ended with {ex.GetType().Name}.");
         }
         finally
@@ -656,31 +644,6 @@ public sealed class AppController
                 _runCts = null;
                 Busy = false;
             }
-        }
-    }
-
-    /// <summary>The same messages as a replace run gives; the card (if it is up) is replaced by the error pill, so no half answer stays.</summary>
-    private void ReportFailure(Exception ex, PromptDefinition prompt, TargetInfo target, Anchor anchor)
-    {
-        switch (ex)
-        {
-            case MarkerException marker:
-                // An unclosed or empty marker: nothing was sent.
-                AppLog.Info($"[{target.ProcessName}] '{prompt.Name}': marker {marker.Status}");
-                _status.ShowError(marker.Status == MarkerStatus.Empty
-                    ? Loc.Get("err_marker_empty")
-                    : Loc.Get("err_marker_unclosed", marker.Start, marker.End), anchor);
-                break;
-            case LlmException llm:
-                // A rejected request may quote parts of the user's text back; that detail is shown, but not written to the log.
-                var logDetail = llm.Kind == LlmErrorKind.BadRequest ? string.Empty : llm.Detail;
-                AppLog.Warn($"AI call failed: {llm.Provider}: {llm.Kind} (HTTP {llm.StatusCode?.ToString() ?? "-"}) {logDetail}");
-                _status.ShowError(Describe(llm), anchor);
-                break;
-            default:
-                AppLog.Error("Run failed.", ex);
-                _status.ShowError(Loc.Get("err_unexpected", ex.GetType().Name), anchor);
-                break;
         }
     }
 
@@ -971,49 +934,6 @@ public sealed class AppController
         AppLog.Info($"[{session.Target?.ProcessName}] {logLine}");
         _status.ShowError(message, session.Anchor);
     }
-
-    private static string Describe(CaptureResult result) => result.Failure switch
-    {
-        CaptureFailure.ElevatedTarget => Loc.Get("err_elevated", result.Detail ?? "?"),
-        CaptureFailure.PasswordField => Loc.Get("err_password"),
-        CaptureFailure.UnsupportedApp => Loc.Get("err_terminal"),
-        CaptureFailure.NoText => Loc.Get("err_no_text"),
-        CaptureFailure.TooLong => Loc.Get("err_too_long"),
-        CaptureFailure.ReadOnlyField => Loc.Get("err_read_only"),
-        CaptureFailure.ClipboardBusy => Loc.Get("err_clipboard_busy"),
-        CaptureFailure.InputBlocked => Loc.Get("err_input_blocked"),
-        _ => Loc.Get("err_no_window"),
-    };
-
-    private static string Describe(LlmException ex)
-    {
-        var detail = string.IsNullOrWhiteSpace(ex.Detail) ? string.Empty : $" ({ex.Detail})";
-        return ex.Kind switch
-        {
-            LlmErrorKind.Auth => Loc.Get("llm_auth", ex.Provider, detail),
-            LlmErrorKind.RateLimit => Loc.Get("llm_rate_limit", ex.Provider, detail),
-            LlmErrorKind.ModelNotFound => Loc.Get("llm_model", ex.Provider, detail),
-            LlmErrorKind.BadRequest => Loc.Get("llm_bad_request", ex.Provider, detail),
-            LlmErrorKind.Server => Loc.Get("llm_server", ex.Provider, detail),
-            LlmErrorKind.Network => Loc.Get("llm_network", ex.Provider),
-            LlmErrorKind.Timeout => Loc.Get("llm_timeout", ex.Provider),
-            LlmErrorKind.Blocked => Loc.Get("llm_blocked", ex.Provider),
-            LlmErrorKind.Truncated => Loc.Get("llm_truncated", ex.Provider),
-            LlmErrorKind.EmptyResponse => Loc.Get("llm_empty", ex.Provider),
-            LlmErrorKind.Config => Loc.Get("llm_config", detail.Trim(' ', '(', ')')),
-            _ => Loc.Get("llm_protocol", ex.Provider, detail),
-        };
-    }
-
-    private static string Describe(ReplaceResult result) => result.Failure switch
-    {
-        ReplaceFailure.TargetChanged => Loc.Get("err_target_changed"),
-        ReplaceFailure.ClipboardBusy => Loc.Get("err_clipboard_busy"),
-        ReplaceFailure.InputBlocked => Loc.Get("err_input_blocked"),
-        ReplaceFailure.PasteNotAcknowledged => Loc.Get("err_paste_ack"),
-        ReplaceFailure.SelectAllFailed => Loc.Get("err_select_all"),
-        _ => Loc.Get("err_unexpected", result.Failure),
-    };
 
     /// <summary>Logs hotkey -> first rendered frame of the overlay, which is what the user perceives as "appears".</summary>
     private void LogFrameLatency(long hotkeyTimestamp, string app, string anchorKind)
