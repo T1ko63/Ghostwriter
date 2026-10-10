@@ -16,7 +16,7 @@ Kuroko processes text wherever the cursor is active, including Outlook, VS Code,
 Control every step using keyboard shortcuts, from selecting text to applying the transformation.
 
 ### Fast response
-The interface is pre-warmed, so the overlay appears 7–16 ms after the hotkey and the request is sent 5–27 ms after it (measured on a typical machine).
+The interface is pre-warmed, so in everyday use the overlay appears about 18 ms after the hotkey and the request leaves the app about 18 ms after it (medians from the log of a typical machine; the first overlay after a start takes 45–80 ms).
 
 ### Flexible prompts
 Type an instruction alongside your text, wrapped in markers such as `<<shorter and friendlier>>`. Kuroko separates the command from the content and returns the result to the active text field.
