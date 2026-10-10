@@ -11,4 +11,9 @@
     <ProjectReference Include="..\Kuroko.Core\Kuroko.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Lets the tests build fake UIA answers and shorten timeouts; nothing else depends on it. -->
+    <InternalsVisibleTo Include="Kuroko.Windows.Tests" />
+  </ItemGroup>
+
 </Project>

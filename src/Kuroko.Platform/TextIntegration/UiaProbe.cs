@@ -18,7 +18,7 @@ public sealed record UiaFocusInfo(
     ScreenPoint? CaretPoint = null)
 {
     /// <summary>The focused element itself, kept so the field can be re-selected and verified before pasting.</summary>
-    internal AutomationElement? Element { get; init; }
+    internal FieldElement? Element { get; init; }
 
     /// <summary>
     /// Chromium/Gecko-based UI (browsers, Electron apps such as VS Code/VSCodium). Their "Edit" element is often a
@@ -254,7 +254,7 @@ internal static class UiaProbe
 
             return new UiaFocusInfo(controlType, current.IsPassword, hasText, selectionKnown, selected, whole, isEditable, isReadOnly, tooLong, caretPoint)
             {
-                Element = element,
+                Element = new UiaFieldElement(element),
                 IsWebEngine = isWebEngine,
                 ElementClass = current.ClassName,
                 FrameworkId = current.FrameworkId,

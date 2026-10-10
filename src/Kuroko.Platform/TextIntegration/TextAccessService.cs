@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using Kuroko.Core.Diagnostics;
-using static Kuroko.Platform.Native.NativeMethods;
 
 namespace Kuroko.Platform.TextIntegration;
 
@@ -14,21 +13,19 @@ namespace Kuroko.Platform.TextIntegration;
 /// </summary>
 public sealed class TextAccessService : ITextAccess
 {
-    private static readonly TimeSpan UiaBudget = TimeSpan.FromMilliseconds(150);
-    private static readonly TimeSpan CopyTimeout = TimeSpan.FromMilliseconds(450);
-    private static readonly TimeSpan CopyFollowUp = TimeSpan.FromMilliseconds(120);
-    private static readonly TimeSpan PasteTimeout = TimeSpan.FromMilliseconds(2000);
-    private static readonly TimeSpan PasteGrace = TimeSpan.FromMilliseconds(40);
-    private static readonly TimeSpan PasteGraceRemote = TimeSpan.FromMilliseconds(900);
-
     private readonly IClipboard _clipboard;
     private readonly IKeyboard _keyboard;
+    private readonly IFieldInspector _field;
 
-    public TextAccessService(IClipboard clipboard, IKeyboard keyboard)
+    public TextAccessService(IClipboard clipboard, IKeyboard keyboard, IFieldInspector field)
     {
         _clipboard = clipboard;
         _keyboard = keyboard;
+        _field = field;
     }
+
+    /// <summary>Time budgets and timeouts; tests shorten them so a timeout path does not take seconds.</summary>
+    internal TextAccessTimings Timings { get; init; } = TextAccessTimings.Default;
 
     /// <summary>Pre-loads UI Automation in the background so the first hotkey is not slowed down by JIT/COM setup.</summary>
     public static void Warmup() => UiaProbe.Warmup();
@@ -36,7 +33,7 @@ public sealed class TextAccessService : ITextAccess
     public async Task<FocusProbe> ProbeAsync(TargetInfo target)
     {
         var started = Stopwatch.GetTimestamp();
-        var info = await UiaProbe.InspectAsync(target, UiaBudget);
+        var info = await _field.InspectAsync(target, Timings.UiaBudget);
         AppLog.Info(info is null
             ? $"UIA probe [{target.ProcessName}]: no answer ({Stopwatch.GetElapsedTime(started).TotalMilliseconds:F0} ms)"
             : $"UIA probe [{target.ProcessName}]: {info.ControlType}, textPattern={info.HasTextPattern}, selectionKnown={info.SelectionKnown}, "
@@ -188,7 +185,7 @@ public sealed class TextAccessService : ITextAccess
         var sequence = _clipboard.SequenceNumber;
         if (!_keyboard.CtrlChord(InputSimulator.VK_C)) return new CopyOutcome(null, CaptureFailure.InputBlocked);
 
-        var deadline = Environment.TickCount64 + (long)CopyTimeout.TotalMilliseconds;
+        var deadline = Environment.TickCount64 + (long)Timings.CopyTimeout.TotalMilliseconds;
         while (true)
         {
             var remaining = TimeSpan.FromMilliseconds(Math.Max(0, deadline - Environment.TickCount64));
@@ -199,11 +196,9 @@ public sealed class TextAccessService : ITextAccess
             if (!string.IsNullOrEmpty(text) && text != sentinel) return new CopyOutcome(text);
 
             // Some apps clear first and fill in later (several updates); give them a short follow-up window.
-            deadline = Math.Min(deadline, Environment.TickCount64 + (long)CopyFollowUp.TotalMilliseconds);
+            deadline = Math.Min(deadline, Environment.TickCount64 + (long)Timings.CopyFollowUp.TotalMilliseconds);
         }
     }
-
-    private static readonly TimeSpan SelectBudget = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
     /// Selects the whole field and proves it where possible: first through UIA (no keystroke), then with Ctrl+A.
@@ -214,11 +209,11 @@ public sealed class TextAccessService : ITextAccess
         var element = capture.Element;
         if (element is not null)
         {
-            if (await UiaProbe.SelectAllVerifiedAsync(element, capture.Text, SelectBudget)) return ReplaceFailure.None;
+            if (await _field.SelectAllVerifiedAsync(element, capture.Text, Timings.SelectBudget)) return ReplaceFailure.None;
 
             // UIA could not select (or not prove it): fall back to the keyboard and check again.
             if (!_keyboard.CtrlChord(InputSimulator.VK_A)) return ReplaceFailure.InputBlocked;
-            return await UiaProbe.WaitForSelectionAsync(element, capture.Text, SelectBudget)
+            return await _field.WaitForSelectionAsync(element, capture.Text, Timings.SelectBudget)
                 ? ReplaceFailure.None
                 : ReplaceFailure.SelectAllFailed;
         }
@@ -226,26 +221,24 @@ public sealed class TextAccessService : ITextAccess
         return _keyboard.CtrlChord(InputSimulator.VK_A) ? ReplaceFailure.None : ReplaceFailure.InputBlocked;
     }
 
-    private static readonly TimeSpan FieldCheckBudget = TimeSpan.FromMilliseconds(150);
-
     /// <summary>
     /// True only when a check proves that the focus or the selection moved since the text was read. A check that
     /// cannot tell (no UIA, too slow) does not block: then the behaviour is the same as without the check.
     /// </summary>
-    private static async Task<bool> FieldChangedAsync(TextCapture capture)
+    private async Task<bool> FieldChangedAsync(TextCapture capture)
     {
         var started = Stopwatch.GetTimestamp();
-        var focusWindow = FocusWindowMatches(capture.Target);
+        var focusWindow = _field.FocusWindowMatches(capture.Target);
         bool? focusElement = null, selection = null;
         if (focusWindow != false && capture.FocusElement is { } focused)
         {
-            focusElement = await UiaProbe.HasFocusAsync(focused, FieldCheckBudget);
+            focusElement = await _field.HasFocusAsync(focused, Timings.FieldCheckBudget);
         }
 
         // A replaced selection must still be selected, or the result would land at the caret or over something else.
         if (focusWindow != false && focusElement != false && capture.Origin == TextOrigin.Selection && capture.Element is { } element)
         {
-            selection = await UiaProbe.SelectionStillAsync(element, capture.Text, FieldCheckBudget);
+            selection = await _field.SelectionStillAsync(element, capture.Text, Timings.FieldCheckBudget);
         }
 
         var changed = focusWindow == false || focusElement == false || selection == false;
@@ -256,15 +249,6 @@ public sealed class TextAccessService : ITextAccess
         static string Show(bool? value) => value switch { true => "same", false => "moved", null => "-" };
     }
 
-    /// <summary>Whether the focused child window is still the one from hotkey time; null when that cannot be told.</summary>
-    private static bool? FocusWindowMatches(TargetInfo target)
-    {
-        if (target.FocusWindow == 0) return null;
-        var info = new GUITHREADINFO { cbSize = (uint)System.Runtime.InteropServices.Marshal.SizeOf<GUITHREADINFO>() };
-        if (!GetGUIThreadInfo(target.ThreadId, ref info) || info.hwndFocus == 0) return null;
-        return info.hwndFocus == target.FocusWindow;
-    }
-
     public async Task<ReplaceResult> ReplaceAsync(TextCapture capture, string newText, CancellationToken ct = default)
     {
         var stopwatch = Stopwatch.StartNew();
@@ -272,7 +256,7 @@ public sealed class TextAccessService : ITextAccess
 
         // The AI call can take seconds. Never paste into a different window, or a different field of the same
         // window, than the one the text came from: with a whole-field capture Ctrl+A would wipe that other field.
-        if (GetForegroundWindow() != target.Window || await FieldChangedAsync(capture))
+        if (!_field.IsForeground(target.Window) || await FieldChangedAsync(capture))
         {
             return new ReplaceResult(ReplaceFailure.TargetChanged, stopwatch.Elapsed);
         }
@@ -305,7 +289,7 @@ public sealed class TextAccessService : ITextAccess
 
             // Once Ctrl+V is out, a cancel must not cut the wait short: the clipboard would be restored under a paste that
             // may still be processed, and the target would paste the old clipboard content instead of the result.
-            var finished = await Task.WhenAny(offer.Rendered, Task.Delay(PasteTimeout, CancellationToken.None));
+            var finished = await Task.WhenAny(offer.Rendered, Task.Delay(Timings.PasteTimeout, CancellationToken.None));
             renderedMs = stopwatch.ElapsedMilliseconds;
             if (finished != offer.Rendered)
             {
@@ -313,7 +297,7 @@ public sealed class TextAccessService : ITextAccess
             }
 
             // The target has asked for the data; give it a moment to finish reading before the clipboard changes again.
-            await Task.Delay(target.IsRemoteClient ? PasteGraceRemote : PasteGrace, CancellationToken.None);
+            await Task.Delay(target.IsRemoteClient ? Timings.PasteGraceRemote : Timings.PasteGrace, CancellationToken.None);
             return new ReplaceResult(ReplaceFailure.None, stopwatch.Elapsed);
         }
         finally
@@ -324,4 +308,33 @@ public sealed class TextAccessService : ITextAccess
                 + $"paste sent at {pasteSentMs} ms, render requested at {renderedMs} ms, restore {stopwatch.ElapsedMilliseconds - beforeRestore} ms");
         }
     }
+}
+
+/// <summary>The time budgets and timeouts of <see cref="TextAccessService"/>.</summary>
+internal sealed record TextAccessTimings
+{
+    public static TextAccessTimings Default { get; } = new();
+
+    /// <summary>How long the UIA probe at hotkey time may take.</summary>
+    public TimeSpan UiaBudget { get; init; } = TimeSpan.FromMilliseconds(150);
+
+    /// <summary>How long to wait for the clipboard to change after Ctrl+C.</summary>
+    public TimeSpan CopyTimeout { get; init; } = TimeSpan.FromMilliseconds(450);
+
+    /// <summary>Extra time after an update that still held the sentinel (apps that clear first and fill in later).</summary>
+    public TimeSpan CopyFollowUp { get; init; } = TimeSpan.FromMilliseconds(120);
+
+    /// <summary>How long the target has to ask for the pasted data after Ctrl+V.</summary>
+    public TimeSpan PasteTimeout { get; init; } = TimeSpan.FromMilliseconds(2000);
+
+    /// <summary>Time the target gets to finish reading the pasted data before the clipboard is restored.</summary>
+    public TimeSpan PasteGrace { get; init; } = TimeSpan.FromMilliseconds(40);
+
+    public TimeSpan PasteGraceRemote { get; init; } = TimeSpan.FromMilliseconds(900);
+
+    /// <summary>Budget for selecting (and proving) the whole field before a whole-field paste.</summary>
+    public TimeSpan SelectBudget { get; init; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>Budget for each UIA check of "is it still the same field and selection" before pasting.</summary>
+    public TimeSpan FieldCheckBudget { get; init; } = TimeSpan.FromMilliseconds(150);
 }
