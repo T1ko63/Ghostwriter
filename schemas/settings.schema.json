@@ -26,7 +26,7 @@
       "allOf": [{ "$ref": "#/definitions/hotkey" }],
       "not": { "pattern": "^\\s*([Cc][Tt][Rr][Ll]|[Cc][Oo][Nn][Tt][Rr][Oo][Ll]|[Ss][Tt][Rr][Gg])\\s*\\+\\s*[AaCcVv]\\s*$" },
       "default": "Ctrl+Alt+C",
-      "description": "Copies the whole text of the result card and closes it. Plain Ctrl+C, Ctrl+A and Ctrl+V are not allowed: the app sends those keys itself when it reads text."
+      "description": "Copies the whole text of the result card and closes it. Also copies the finished answer while the error pill of a failed paste is shown. Plain Ctrl+C, Ctrl+A and Ctrl+V are not allowed: the app sends those keys itself when it reads text."
     },
     "result_position": {
       "type": "string",

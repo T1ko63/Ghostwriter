@@ -3,7 +3,7 @@ using static Kuroko.Platform.Native.NativeMethods;
 
 namespace Kuroko.Platform.Tray;
 
-public sealed record TrayMenuItem(string Text, Action OnClick, bool Checked = false, bool Separator = false);
+public sealed record TrayMenuItem(string Text, Action OnClick, bool Checked = false, bool Separator = false, bool Enabled = true);
 
 /// <summary>Notification-area icon with a native popup menu and balloon/toast messages.</summary>
 public sealed class TrayIcon : IDisposable
@@ -11,7 +11,7 @@ public sealed class TrayIcon : IDisposable
     private const uint NIM_ADD = 0, NIM_MODIFY = 1, NIM_DELETE = 2, NIM_SETVERSION = 4;
     private const uint NIF_MESSAGE = 1, NIF_ICON = 2, NIF_TIP = 4, NIF_INFO = 0x10;
     private const uint NIIF_INFO = 1, NIIF_ERROR = 3, NIIF_NOSOUND = 0x10;
-    private const uint MF_STRING = 0, MF_SEPARATOR = 0x800, MF_CHECKED = 8;
+    private const uint MF_STRING = 0, MF_GRAYED = 1, MF_SEPARATOR = 0x800, MF_CHECKED = 8;
     private const uint TPM_RIGHTBUTTON = 2, TPM_RETURNCMD = 0x100, TPM_BOTTOMALIGN = 0x20;
     private const uint CallbackMessage = WM_APP + 1;
     private const nint IDI_APPLICATION = 32512;
@@ -121,7 +121,7 @@ public sealed class TrayIcon : IDisposable
             {
                 var item = items[i];
                 if (item.Separator) AppendMenu(menu, MF_SEPARATOR, 0, null);
-                else AppendMenu(menu, MF_STRING | (item.Checked ? MF_CHECKED : 0), (nuint)(i + 1), item.Text);
+                else AppendMenu(menu, MF_STRING | (item.Checked ? MF_CHECKED : 0) | (item.Enabled ? 0 : MF_GRAYED), (nuint)(i + 1), item.Text);
             }
 
             GetCursorPos(out var point);

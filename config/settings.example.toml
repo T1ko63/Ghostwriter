@@ -18,6 +18,7 @@ undo_history = 10
 
 # Copies the whole text of the result card (prompts with output = "overlay") and closes the card.
 # Only registered while a card is visible; Esc closes the card (and cancels a request that is still running).
+# Also copies the finished answer while the error pill of a failed paste is shown (tray: "Copy last result" works later too).
 # Plain Ctrl+C, Ctrl+A and Ctrl+V are not allowed: the app sends those keys itself when it reads text.
 result_copy_hotkey = "Ctrl+Alt+C"
 

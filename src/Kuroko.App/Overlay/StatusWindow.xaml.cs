@@ -23,11 +23,13 @@ public partial class StatusWindow : Window
 {
     private static readonly TimeSpan ErrorDuration = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan InfoDuration = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ActionDuration = TimeSpan.FromSeconds(15);
 
     private readonly DispatcherTimer _autoHide;
     private readonly double _pillMaxWidth;
     private nint _hwnd;
     private bool _isProgress;
+    private bool _actionPill;
 
     // ---- result card ----
 
@@ -81,6 +83,12 @@ public partial class StatusWindow : Window
 
     /// <summary>The window left result mode: the card was hidden, or replaced by an error, an info or a new progress pill.</summary>
     public event Action? ResultClosed;
+
+    /// <summary>An error pill shown with <see cref="ShowErrorWithAction"/> went away: hidden, timed out, or replaced by anything else.</summary>
+    public event Action? ActionEnded;
+
+    /// <summary>True while an error pill from <see cref="ShowErrorWithAction"/> is on screen.</summary>
+    public bool IsActionShown => _actionPill;
 
     /// <summary>Font size of the card text (result_font_size). Takes effect at once, also for a card that is on screen.</summary>
     public double ResultFontSize
@@ -138,6 +146,7 @@ public partial class StatusWindow : Window
 
     public void ShowProgress(string text, Anchor anchor)
     {
+        EndAction();
         LeaveResultMode();
         _isProgress = true;
         _autoHide.Interval = ErrorDuration;
@@ -147,6 +156,7 @@ public partial class StatusWindow : Window
 
     public void ShowError(string text, Anchor anchor)
     {
+        EndAction();
         LeaveResultMode();
         _isProgress = false;
         Present(text, anchor, showBar: false, isError: true);
@@ -158,6 +168,7 @@ public partial class StatusWindow : Window
     /// <summary>A short, quiet confirmation (muted text, gone after two seconds unless <paramref name="longer"/>), e.g. "Undone".</summary>
     public void ShowInfo(string text, Anchor anchor, bool longer = false)
     {
+        EndAction();
         LeaveResultMode();
         _isProgress = false;
         Present(text, anchor, showBar: false);
@@ -166,12 +177,34 @@ public partial class StatusWindow : Window
         _autoHide.Start();
     }
 
+    /// <summary>
+    /// An error pill that offers something the user can still do, through a temporary hotkey the caller holds (copy an
+    /// answer that could not be pasted). It stays longer than a plain error; <see cref="ActionEnded"/> tells the caller
+    /// when to release the hotkey.
+    /// </summary>
+    public void ShowErrorWithAction(string text, Anchor anchor)
+    {
+        ShowError(text, anchor);
+        _autoHide.Stop();
+        _autoHide.Interval = ActionDuration;
+        _autoHide.Start();
+        _actionPill = true;
+    }
+
+    private void EndAction()
+    {
+        if (!_actionPill) return;
+        _actionPill = false;
+        ActionEnded?.Invoke();
+    }
+
     public void HideStatus()
     {
         _autoHide.Stop();
         _isProgress = false;
         ChunkShift.BeginAnimation(TranslateTransform.XProperty, null);
         Hide();
+        EndAction();
         LeaveResultMode();
     }
 
@@ -184,6 +217,7 @@ public partial class StatusWindow : Window
     /// </summary>
     public void BeginResult(string label, Anchor anchor)
     {
+        EndAction();
         LeaveResultMode();
         _resultMode = true;
         _anchor = anchor;

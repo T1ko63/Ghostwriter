@@ -19,6 +19,7 @@ Audit-Bericht vom Oktober 2026 in [`refactoring-report.md`](refactoring-report.m
 | Laufende Anfrage abbrechen | `Esc`, nur solange eine Anfrage läuft |
 | Ergebnis-Karte schließen (und eine laufende Anfrage abbrechen) | `Esc`, nur solange eine Karte sichtbar ist |
 | Ergebnis-Karte kopieren und schließen | `Ctrl+Alt+C` (`result_copy_hotkey`), nur solange eine Karte sichtbar ist |
+| Ergebnis kopieren, das nicht eingefügt werden konnte | `Ctrl+Alt+C` (`result_copy_hotkey`), nur solange die Fehlerpille sichtbar ist; später Tray → „Letztes Ergebnis kopieren“ |
 
 **Im Overlay:** sofort tippen filtert (Fuzzy-Suche), `↑`/`↓` und `Enter` wählen, `1`–`9` wählen direkt,
 Mausklick geht auch, `Esc` bricht ab. Danach liegt der Fokus wieder genau dort, wo du warst.
@@ -92,8 +93,16 @@ Themes stehen im Block `[appearance]` der `settings.toml` (siehe unten); alle Ne
 Hover) werden aus der Textfarbe abgeleitet. `accent` färbt nur noch Textcursor, Textmarkierung und Fortschrittslinie, die Auswahlzeile
 bestimmt `selection`. Maße, Schriftgrößen und Abstände stehen weiter an einer Stelle: `src\Kuroko.App\Themes\Design.xaml`.
 
-**Tray-Menü:** Prompts bearbeiten · Einstellungen bearbeiten · Config-Ordner öffnen · Config neu laden · API-Schlüssel … ·
-Verbindung testen · Mit Windows starten · Über Kuroko … · Beenden.
+**Wenn das Einfügen scheitert:** Ist die Antwort schon da, kann aber nicht eingefügt werden (Fenster gewechselt, Zwischenablage
+belegt, Eingabe blockiert, Einfügen nicht bestätigt), geht sie nicht verloren. Die Fehlerpille nennt den Grund und bietet an:
+„Ctrl+Alt+C kopiert das Ergebnis“. Sie bleibt dafür 15 Sekunden stehen (Klick schließt sie), und nur so lange ist
+`result_copy_hotkey` registriert. Danach liegt die Antwort weiter im Tray-Menü unter **Letztes Ergebnis kopieren**; der Eintrag
+kopiert immer die letzte vollständige Antwort (auch die einer Ergebnis-Karte) und ist ausgegraut, solange es noch keine gibt.
+Auch nach einem Abbruch mit `Esc` kurz vor dem Einfügen ist sie dort zu finden. Gespeichert wird sie nur im Arbeitsspeicher
+(siehe [Datenschutz](#datenschutz)).
+
+**Tray-Menü:** Letztes Ergebnis kopieren · Prompts bearbeiten · Einstellungen bearbeiten · Config-Ordner öffnen · Config neu laden ·
+API-Schlüssel … · Verbindung testen · Mit Windows starten · Über Kuroko … · Beenden.
 
 * **Prompts bearbeiten / Einstellungen bearbeiten** öffnen `prompts.toml` bzw. `settings.toml` im Standardprogramm für
   `.toml`-Dateien; ist keins eingerichtet, im Editor (Notepad). Nach dem Speichern gilt die Änderung sofort.
@@ -179,7 +188,7 @@ theme = "system"            # system | light | dark
 accent = "none"             # none (neutral) | system (Windows-Akzent) | Hex wie "#3B82F6": Cursor, Textmarkierung, Fortschrittslinie
 undo_hotkey = "Ctrl+Alt+Z"  # letzte Ersetzung rückgängig
 undo_history = 10           # so viele Ersetzungen werden gemerkt (0 = aus)
-result_copy_hotkey = "Ctrl+Alt+C"   # kopiert die Ergebnis-Karte (nur solange sie sichtbar ist); nicht erlaubt: einfaches Ctrl+C/A/V
+result_copy_hotkey = "Ctrl+Alt+C"   # kopiert die Ergebnis-Karte bzw. das nicht eingefügte Ergebnis (nur solange Karte oder Fehlerpille sichtbar sind); nicht erlaubt: einfaches Ctrl+C/A/V
 overlay_position = "caret"  # Auswahl-Menü: caret | mouse | fixed (fester Platz: overlay_fixed_position, Standard top-third)
 overlay_screen_margin = 8   # weitere Schlüssel: overlay_fixed_position, overlay_font_size, overlay_width, overlay_min_height, overlay_max_height
 result_position = "fixed"   # Ergebnis-Karte: fixed (fester Platz, siehe result_fixed_position) | follow (wie das Prompt-Menü) | caret | mouse
@@ -308,11 +317,13 @@ Rechner), in einer Umgebungsvariable oder im Klartext in `settings.toml`.
 | Autostart | Registry, `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Pfad zu `Kuroko.exe`, nur wenn „Mit Windows starten“ an ist |
 
 **Nur im Arbeitsspeicher, beim Beenden weg:** die Rückgängig-Liste (Original und Ergebnis der letzten `undo_history`
-Ersetzungen) und die gesicherte Zwischenablage während einer Ersetzung. Was Kuroko selbst kurz in die Zwischenablage legt
+Ersetzungen), die letzte vollständige Antwort (für „Letztes Ergebnis kopieren“, von der nächsten Antwort ersetzt) und die
+gesicherte Zwischenablage während einer Ersetzung. Was Kuroko selbst kurz in die Zwischenablage legt
 (Erkennungstext beim Kopieren, Ergebnis beim Einfügen), ist für den Windows-Zwischenablageverlauf und die Cloud-Synchronisierung
 gesperrt. Das gilt auch für deinen vorherigen Inhalt, wenn Kuroko ihn danach zurückschreibt: Er steht schon im Verlauf, ein Lauf
 erzeugt also keinen Doppel-Eintrag. Kopiert die Ziel-App beim Lesen per `Strg+C` die Markierung, landet diese allerdings im
-Verlauf (das macht die Ziel-App, nicht Kuroko). Nur `Ctrl+Alt+C` in der Ergebnis-Karte legt den Text wie ein normales Kopieren ab.
+Verlauf (das macht die Ziel-App, nicht Kuroko). Nur was du selbst kopieren lässt (`Ctrl+Alt+C` in der Ergebnis-Karte oder an der
+Fehlerpille, „Letztes Ergebnis kopieren“ im Tray), legt Kuroko wie ein normales Kopieren ab, also auch im Verlauf.
 
 **Bewusst ausgelassen:** Passwortfelder, Terminals und Fenster mit Administratorrechten liest Kuroko nicht.
 

@@ -58,13 +58,15 @@ Store API keys in the Windows Credential Manager from the tray menu instead of k
 | Cancel a running request | `Esc`, only while a request is running |
 | Close the result card (cancels a running request) | `Esc`, only while a card is visible |
 | Copy the result card and close it | `Ctrl+Alt+C`, only while a card is visible |
+| Copy an answer that could not be pasted | `Ctrl+Alt+C` while the error pill is shown, later tray → **Copy last result** |
 
 Kuroko works on the selected text, or on the whole field if nothing is selected. The Universal prompt decides from the text:
 without a marker, the text is a task (“decline Friday’s game night”) and the answer replaces it; with a marker such as
 `<<shorter and friendlier>>`, the marker’s instruction is applied to the rest of the text. Prompts with
 `output = "overlay"` show the answer in a small card and leave the text untouched, which also works on read-only pages.
 
-The field is only changed once the complete answer has arrived. Password fields, terminals, administrator windows and
+The field is only changed once the complete answer has arrived. If the paste then fails (the window changed, the
+clipboard was busy), the answer is not lost: copy it from the error pill or from the tray menu. Password fields, terminals, administrator windows and
 texts over 50,000 characters are not supported.
 
 ## Privacy
@@ -79,9 +81,10 @@ texts over 50,000 characters are not supported.
 * **API keys** travel only in the request header, never in the URL, and never over plain `http://` to a remote host.
   They are masked in error messages and never logged.
 * **Stored on disk:** `settings.toml`, `prompts.toml` and `kuroko.log` in `%APPDATA%\Kuroko`. The log holds timings,
-  text lengths, the target program’s name and prompt names, never your text, results or keys. Undo history and the
-  saved clipboard stay in memory only; what Kuroko puts on the clipboard, including your previous content when it is
-  put back, is kept out of clipboard history and cloud sync, so a run adds no duplicate entries.
+  text lengths, the target program’s name and prompt names, never your text, results or keys. Undo history, the last
+  answer (for **Copy last result**) and the saved clipboard stay in memory only; what Kuroko puts on the clipboard,
+  including your previous content when it is put back, is kept out of clipboard history and cloud sync, so a run adds
+  no duplicate entries. Only what you ask Kuroko to copy is a normal copy that may appear in clipboard history.
 
 Details are in the German guide under [Datenschutz](docs/README.md#datenschutz).
 

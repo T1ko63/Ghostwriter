@@ -30,6 +30,7 @@ public static class DefaultSettings
 
             # Kopiert den ganzen Text der Ergebnis-Karte (Prompts mit output = "overlay" in prompts.toml) in die Zwischenablage und schließt die Karte.
             # Der Hotkey ist nur registriert, solange eine Karte sichtbar ist; Esc schließt die Karte (und bricht eine laufende Anfrage ab).
+            # Er kopiert auch die fertige Antwort, solange die Fehlerpille eines gescheiterten Einfügens zu sehen ist (später: Tray → Letztes Ergebnis kopieren).
             # Nicht erlaubt ist einfaches Strg+C, Strg+A und Strg+V: Diese Tasten sendet die App beim Lesen des Textes selbst.
             result_copy_hotkey = "{{AppSettings.DefaultResultCopyHotkey}}"
 

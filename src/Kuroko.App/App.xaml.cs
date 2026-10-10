@@ -512,6 +512,8 @@ public partial class App : Application
 
     private IReadOnlyList<TrayMenuItem> BuildMenu() =>
     [
+        new TrayMenuItem(Loc.Get("tray_copy_last"), () => _controller!.CopyLastResult(), Enabled: _controller!.HasLastResult),
+        new TrayMenuItem(string.Empty, () => { }, Separator: true),
         new TrayMenuItem(Loc.Get("tray_edit_prompts"), () => OpenFile(_config!.PromptsPath)),
         new TrayMenuItem(Loc.Get("tray_edit_settings"), () => OpenFile(_config!.SettingsPath)),
         new TrayMenuItem(Loc.Get("tray_open_config"), () => Process.Start(new ProcessStartInfo(_configDir) { UseShellExecute = true })),
