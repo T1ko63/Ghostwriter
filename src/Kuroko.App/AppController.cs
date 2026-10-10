@@ -63,7 +63,7 @@ public sealed class AppController
 
     private readonly Action? _warmUp;
     private readonly HotkeyManager? _hotkeys;
-    private readonly ClipboardService? _clipboard;
+    private readonly IClipboard? _clipboard;
 
     /// <param name="prompts">Read on every use, so a reloaded prompts.toml is picked up without rebuilding anything.</param>
     /// <param name="hotkeys">Needed for the temporary hotkeys: Esc during a run, Esc and copy while the result card is up.</param>
@@ -71,7 +71,7 @@ public sealed class AppController
     public AppController(
         ITextAccess text, OverlayWindow overlay, StatusWindow status, IPromptRunner runner,
         Func<IReadOnlyList<PromptDefinition>> prompts, Action? warmUp = null,
-        HotkeyManager? hotkeys = null, ClipboardService? clipboard = null)
+        HotkeyManager? hotkeys = null, IClipboard? clipboard = null)
     {
         _text = text;
         _overlay = overlay;

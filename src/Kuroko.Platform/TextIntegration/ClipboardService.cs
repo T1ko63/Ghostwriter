@@ -39,7 +39,7 @@ public sealed class DelayedTextOffer
 /// synchronous and short; call them from a worker thread, never block the UI thread that has to
 /// answer WM_RENDERFORMAT.
 /// </summary>
-public sealed class ClipboardService : IDisposable
+public sealed class ClipboardService : IClipboard, IDisposable
 {
     private const long MaxFormatBytes = 64L * 1024 * 1024;
 
@@ -59,7 +59,7 @@ public sealed class ClipboardService : IDisposable
         AddClipboardFormatListener(window.Handle);
     }
 
-    public static uint SequenceNumber => GetClipboardSequenceNumber();
+    public uint SequenceNumber => GetClipboardSequenceNumber();
 
     // ---- change detection ----
 

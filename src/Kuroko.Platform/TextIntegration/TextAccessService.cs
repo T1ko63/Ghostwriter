@@ -21,9 +21,14 @@ public sealed class TextAccessService : ITextAccess
     private static readonly TimeSpan PasteGrace = TimeSpan.FromMilliseconds(40);
     private static readonly TimeSpan PasteGraceRemote = TimeSpan.FromMilliseconds(900);
 
-    private readonly ClipboardService _clipboard;
+    private readonly IClipboard _clipboard;
+    private readonly IKeyboard _keyboard;
 
-    public TextAccessService(ClipboardService clipboard) => _clipboard = clipboard;
+    public TextAccessService(IClipboard clipboard, IKeyboard keyboard)
+    {
+        _clipboard = clipboard;
+        _keyboard = keyboard;
+    }
 
     /// <summary>Pre-loads UI Automation in the background so the first hotkey is not slowed down by JIT/COM setup.</summary>
     public static void Warmup() => UiaProbe.Warmup();
@@ -130,7 +135,7 @@ public sealed class TextAccessService : ITextAccess
             var origin = TextOrigin.Selection;
             if (selectAllFirst)
             {
-                if (!InputSimulator.CtrlChord(InputSimulator.VK_A)) return CaptureResult.Fail(CaptureFailure.InputBlocked);
+                if (!_keyboard.CtrlChord(InputSimulator.VK_A)) return CaptureResult.Fail(CaptureFailure.InputBlocked);
                 origin = TextOrigin.WholeField;
             }
 
@@ -142,7 +147,7 @@ public sealed class TextAccessService : ITextAccess
             {
                 if (!canSelectAll) return CaptureResult.Fail(CaptureFailure.NoText);
 
-                if (!InputSimulator.CtrlChord(InputSimulator.VK_A)) return CaptureResult.Fail(CaptureFailure.InputBlocked);
+                if (!_keyboard.CtrlChord(InputSimulator.VK_A)) return CaptureResult.Fail(CaptureFailure.InputBlocked);
                 outcome = await CopyOnceAsync(ct);
                 if (outcome.Failure is { } failedAgain) return CaptureResult.Fail(failedAgain);
                 text = outcome.Text;
@@ -180,8 +185,8 @@ public sealed class TextAccessService : ITextAccess
         var sentinel = "​" + Guid.NewGuid().ToString("N");
         if (!_clipboard.TrySetText(sentinel, hidden: true)) return new CopyOutcome(null, CaptureFailure.ClipboardBusy);
 
-        var sequence = ClipboardService.SequenceNumber;
-        if (!InputSimulator.CtrlChord(InputSimulator.VK_C)) return new CopyOutcome(null, CaptureFailure.InputBlocked);
+        var sequence = _clipboard.SequenceNumber;
+        if (!_keyboard.CtrlChord(InputSimulator.VK_C)) return new CopyOutcome(null, CaptureFailure.InputBlocked);
 
         var deadline = Environment.TickCount64 + (long)CopyTimeout.TotalMilliseconds;
         while (true)
@@ -189,7 +194,7 @@ public sealed class TextAccessService : ITextAccess
             var remaining = TimeSpan.FromMilliseconds(Math.Max(0, deadline - Environment.TickCount64));
             if (!await _clipboard.WaitForChangeAsync(sequence, remaining, ct)) return new CopyOutcome(null);
 
-            sequence = ClipboardService.SequenceNumber;
+            sequence = _clipboard.SequenceNumber;
             var text = _clipboard.TryGetText();
             if (!string.IsNullOrEmpty(text) && text != sentinel) return new CopyOutcome(text);
 
@@ -204,7 +209,7 @@ public sealed class TextAccessService : ITextAccess
     /// Selects the whole field and proves it where possible: first through UIA (no keystroke), then with Ctrl+A.
     /// Clipboard-read captures have no UIA element; there the Ctrl+A at read time already proved it worked.
     /// </summary>
-    private static async Task<ReplaceFailure> SelectWholeFieldAsync(TextCapture capture)
+    private async Task<ReplaceFailure> SelectWholeFieldAsync(TextCapture capture)
     {
         var element = capture.Element;
         if (element is not null)
@@ -212,13 +217,13 @@ public sealed class TextAccessService : ITextAccess
             if (await UiaProbe.SelectAllVerifiedAsync(element, capture.Text, SelectBudget)) return ReplaceFailure.None;
 
             // UIA could not select (or not prove it): fall back to the keyboard and check again.
-            if (!InputSimulator.CtrlChord(InputSimulator.VK_A)) return ReplaceFailure.InputBlocked;
+            if (!_keyboard.CtrlChord(InputSimulator.VK_A)) return ReplaceFailure.InputBlocked;
             return await UiaProbe.WaitForSelectionAsync(element, capture.Text, SelectBudget)
                 ? ReplaceFailure.None
                 : ReplaceFailure.SelectAllFailed;
         }
 
-        return InputSimulator.CtrlChord(InputSimulator.VK_A) ? ReplaceFailure.None : ReplaceFailure.InputBlocked;
+        return _keyboard.CtrlChord(InputSimulator.VK_A) ? ReplaceFailure.None : ReplaceFailure.InputBlocked;
     }
 
     private static readonly TimeSpan FieldCheckBudget = TimeSpan.FromMilliseconds(150);
@@ -291,7 +296,7 @@ public sealed class TextAccessService : ITextAccess
 
             // Last point at which a cancel is honoured; the finally block restores the clipboard.
             ct.ThrowIfCancellationRequested();
-            if (!InputSimulator.CtrlChord(InputSimulator.VK_V))
+            if (!_keyboard.CtrlChord(InputSimulator.VK_V))
             {
                 return new ReplaceResult(ReplaceFailure.InputBlocked, stopwatch.Elapsed);
             }

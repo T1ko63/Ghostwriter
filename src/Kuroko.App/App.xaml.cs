@@ -151,7 +151,7 @@ public partial class App : Application
             () => _providers!,
             () => (_config.Current.Settings.MarkerStart, _config.Current.Settings.MarkerEnd));
         _controller = new AppController(
-            new TextAccessService(_clipboard), overlay, status, runner,
+            new TextAccessService(_clipboard, new InputSimulator()), overlay, status, runner,
             prompts: () => _config.Current.Prompts,
             warmUp: () => _ = _providers!.WarmUpAsync(),
             hotkeys: _hotkeys,

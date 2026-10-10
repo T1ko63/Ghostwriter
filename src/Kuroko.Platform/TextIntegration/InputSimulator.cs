@@ -4,7 +4,7 @@ using static Kuroko.Platform.Native.NativeMethods;
 namespace Kuroko.Platform.TextIntegration;
 
 /// <summary>Keyboard injection via SendInput.</summary>
-public static class InputSimulator
+public sealed class InputSimulator : IKeyboard
 {
     public const ushort VK_CONTROL = 0x11;
     public const ushort VK_A = 0x41;
@@ -19,7 +19,7 @@ public static class InputSimulator
     /// global hotkey (e.g. Alt of Ctrl+Alt+K) is released first, otherwise the target would see
     /// Ctrl+Alt+C instead of Ctrl+C. The user's later physical key-up is harmless.
     /// </summary>
-    public static bool CtrlChord(ushort key)
+    public bool CtrlChord(ushort key)
     {
         var events = new List<INPUT>(10);
         foreach (var modifier in ModifierKeys)
