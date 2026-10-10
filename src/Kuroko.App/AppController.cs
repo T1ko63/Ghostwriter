@@ -46,6 +46,7 @@ public sealed class AppController
     private readonly IHotkeyRegistry? _hotkeys;
     private readonly IDesktop _desktop;
     private readonly IClipboard? _clipboard;
+    private readonly LastResult _lastResult;
 
     /// <param name="prompts">Read on every use, so a reloaded prompts.toml is picked up without rebuilding anything.</param>
     /// <param name="hotkeys">Needed for the temporary hotkeys: Esc during a run, Esc and copy while the result card is up.</param>
@@ -68,14 +69,13 @@ public sealed class AppController
         _runEsc = new TemporaryHotkey(hotkeys, "Esc could not be registered for the run");
         _cardEsc = new TemporaryHotkey(hotkeys, "Esc could not be registered for the result card");
         _cardCopy = new TemporaryHotkey(hotkeys, "The copy hotkey could not be registered for the result card");
-        _rescueCopy = new TemporaryHotkey(hotkeys, "The copy hotkey could not be registered for the error pill");
+        _lastResult = new LastResult(status, hotkeys, clipboard, () => ResultCopyHotkey);
 
         _overlay.PromptChosen += prompt => _ = OnPromptChosenAsync(prompt);
         _overlay.Cancelled += () => _ = CloseOverlayAsync(restoreFocus: true);
         _overlay.Dismissed += () => _ = CloseOverlayAsync(restoreFocus: false);
         _status.CancelRequested += OnStatusCancelRequested;
         _status.ResultClosed += OnCardClosed;
-        _status.ActionEnded += _rescueCopy.Release;
     }
 
     private readonly AnchorPolicy _anchors = new();
@@ -397,13 +397,13 @@ public sealed class AppController
                 fallback = used;
                 OnUi(() => _status.UpdateProgress(Loc.Get("fallback_working", used.From, used.To), session.Anchor));
             });
-            _lastResult = output;
+            _lastResult.Remember(output);
 
             var replaced = await Task.Run(() => _text.ReplaceAsync(capture, output, cts.Token));
             if (!replaced.Success)
             {
                 AppLog.Info($"[{target.ProcessName}] replace failed: {replaced.Failure}; the answer ({output.Length} chars) is kept for copying");
-                ShowRescue(Describe(replaced), session.Anchor);
+                _lastResult.ShowRescue(Describe(replaced), session.Anchor);
                 return;
             }
 
@@ -439,7 +439,7 @@ public sealed class AppController
         {
             // The answer is complete: the failure must not lose it.
             AppLog.Error("Run failed.", ex);
-            ShowRescue(FailureMessages.Unexpected(ex), session.Anchor);
+            _lastResult.ShowRescue(FailureMessages.Unexpected(ex), session.Anchor);
         }
         finally
         {
@@ -454,67 +454,14 @@ public sealed class AppController
 
     // ---- last result ----
 
-    /// <summary>
-    /// The last complete answer (pasted, shown in a card, or not pasted because the paste failed). Memory only: never on
-    /// disk, never in the log; replaced by the next answer and gone when the app quits.
-    /// </summary>
-    private string? _lastResult;
-
-    private readonly TemporaryHotkey _rescueCopy;
-    private Anchor _rescueAnchor;
-    private bool _rescueReleasedForReload;
-
     /// <summary>True once an answer has arrived; the tray entry "Copy last result" is greyed out until then.</summary>
-    public bool HasLastResult => _lastResult is not null;
-
-    /// <summary>
-    /// The answer is complete but could not be pasted: the error pill says so and offers to copy it with
-    /// result_copy_hotkey, registered only while this pill is up. The tray entry works as well, also later.
-    /// </summary>
-    private void ShowRescue(string message, Anchor anchor)
-    {
-        _rescueAnchor = anchor;
-        var parsed = HotkeyGesture.TryParse(ResultCopyHotkey, out var gesture, out _);
-        _status.ShowErrorWithAction(
-            $"{message} {(parsed && _hotkeys is not null ? Loc.Get("rescue_hotkey", gesture) : Loc.Get("rescue_tray"))}", anchor);
-
-        // Registered after the pill is up: showing it ends any earlier action pill, which releases that pill's hotkey.
-        if (parsed && !_rescueCopy.Register(gesture, OnRescueCopy) && _hotkeys is not null)
-        {
-            _status.ShowErrorWithAction($"{message} {Loc.Get("rescue_tray")}", anchor);
-        }
-    }
-
-    private void OnRescueCopy(long hotkeyTimestamp)
-    {
-        AppLog.Info("hotkey: copy result (error pill)");
-        if (!_status.IsActionShown) return;
-        CopyLastResult(_rescueAnchor, showPill: true);
-    }
+    public bool HasLastResult => _lastResult.HasValue;
 
     /// <summary>Tray entry "Copy last result". The pill is skipped while a run or a card is on screen, so neither is covered.</summary>
     public void CopyLastResult()
     {
         AppLog.Info("tray: copy last result");
-        CopyLastResult(Anchor.Resolve(null, OverlayPosition.Mouse), showPill: !_busy && !_cardLive);
-    }
-
-    /// <summary>
-    /// Puts the last answer on the clipboard as a normal copy: the user asked for it, so unlike what Kuroko puts there
-    /// itself while reading and pasting, it may show up in the clipboard history.
-    /// </summary>
-    private void CopyLastResult(Anchor anchor, bool showPill)
-    {
-        if (_lastResult is null) return;
-        if (_clipboard is null || !_clipboard.TrySetText(_lastResult, hidden: false))
-        {
-            AppLog.Info("Copying the last result failed: clipboard busy.");
-            if (showPill) _status.ShowError(Loc.Get("err_clipboard_busy"), anchor);
-            return;
-        }
-
-        AppLog.Info($"Last result copied: {_lastResult.Length} chars.");
-        if (showPill) _status.ShowInfo(Loc.Get("result_copied"), anchor); // also ends the error pill, which releases its hotkey
+        _lastResult.Copy(Anchor.Resolve(null, OverlayPosition.Mouse), showPill: !_busy && !_cardLive);
     }
 
     // ---- result card (overlay output) ----
@@ -599,7 +546,7 @@ public sealed class AppController
 
             if (!ReferenceEquals(_runCts, cts)) return;
             _cardComplete = true;
-            _lastResult = _cardText.ToString();
+            _lastResult.Remember(_cardText.ToString());
             _status.EndResult();
 
             AppLog.Info($"[{target.ProcessName}] '{prompt.Name}' ({prompt.Mode}, overlay) ok via {capture.UsedStrategy}/{capture.Origin}, "
@@ -751,8 +698,7 @@ public sealed class AppController
         UnregisterCardHotkeys();
         _runEscReleasedForReload = _runEsc.IsHeld;
         UnregisterRunEsc();
-        _rescueReleasedForReload = _rescueCopy.IsHeld;
-        _rescueCopy.Release();
+        _lastResult.ReleaseForReload();
     }
 
     /// <summary>Registers the temporary hotkeys again (with the current <see cref="ResultCopyHotkey"/>) if a card, a run or an error pill held them.</summary>
@@ -761,12 +707,7 @@ public sealed class AppController
         if (_cardLive) RegisterCardHotkeys();
         if (_runEscReleasedForReload && _runCts is not null && !_cardLive) RegisterRunEsc();
         _runEscReleasedForReload = false;
-        if (_rescueReleasedForReload && _status.IsActionShown && HotkeyGesture.TryParse(ResultCopyHotkey, out var gesture, out _))
-        {
-            _rescueCopy.Register(gesture, OnRescueCopy);
-        }
-
-        _rescueReleasedForReload = false;
+        _lastResult.RestoreAfterReload();
     }
 
     // ---- Esc during a run ----
