@@ -65,13 +65,17 @@ public sealed class AppController
         _hotkeys = hotkeys;
         _clipboard = clipboard;
         _desktop = desktop ?? new Win32Desktop();
+        _runEsc = new TemporaryHotkey(hotkeys, "Esc could not be registered for the run");
+        _cardEsc = new TemporaryHotkey(hotkeys, "Esc could not be registered for the result card");
+        _cardCopy = new TemporaryHotkey(hotkeys, "The copy hotkey could not be registered for the result card");
+        _rescueCopy = new TemporaryHotkey(hotkeys, "The copy hotkey could not be registered for the error pill");
 
         _overlay.PromptChosen += prompt => _ = OnPromptChosenAsync(prompt);
         _overlay.Cancelled += () => _ = CloseOverlayAsync(restoreFocus: true);
         _overlay.Dismissed += () => _ = CloseOverlayAsync(restoreFocus: false);
         _status.CancelRequested += OnStatusCancelRequested;
         _status.ResultClosed += OnCardClosed;
-        _status.ActionEnded += UnregisterRescueHotkey;
+        _status.ActionEnded += _rescueCopy.Release;
     }
 
     public OverlayPosition Position { get; set; } = OverlayPosition.Caret;
@@ -442,7 +446,7 @@ public sealed class AppController
     /// </summary>
     private string? _lastResult;
 
-    private int _rescueHotkeyId;
+    private readonly TemporaryHotkey _rescueCopy;
     private Anchor _rescueAnchor;
     private bool _rescueReleasedForReload;
 
@@ -461,27 +465,10 @@ public sealed class AppController
             $"{message} {(parsed && _hotkeys is not null ? Loc.Get("rescue_hotkey", gesture) : Loc.Get("rescue_tray"))}", anchor);
 
         // Registered after the pill is up: showing it ends any earlier action pill, which releases that pill's hotkey.
-        if (parsed && !RegisterRescueHotkey(gesture) && _hotkeys is not null)
+        if (parsed && !_rescueCopy.Register(gesture, OnRescueCopy) && _hotkeys is not null)
         {
             _status.ShowErrorWithAction($"{message} {Loc.Get("rescue_tray")}", anchor);
         }
-    }
-
-    private bool RegisterRescueHotkey(HotkeyGesture gesture)
-    {
-        if (_hotkeys is null) return false;
-        UnregisterRescueHotkey();
-        var copy = _hotkeys.Register(gesture, OnRescueCopy, temporary: true);
-        if (copy.Success) _rescueHotkeyId = copy.Id;
-        else AppLog.Warn($"The copy hotkey could not be registered for the error pill: {copy.Error}");
-        return copy.Success;
-    }
-
-    private void UnregisterRescueHotkey()
-    {
-        if (_hotkeys is null || _rescueHotkeyId == 0) return;
-        _hotkeys.Unregister(_rescueHotkeyId);
-        _rescueHotkeyId = 0;
     }
 
     private void OnRescueCopy(long hotkeyTimestamp)
@@ -527,8 +514,8 @@ public sealed class AppController
     private bool _cardComplete;
     private readonly StringBuilder _cardText = new();
     private Anchor _cardAnchor;
-    private int _escHotkeyId;
-    private int _copyHotkeyId;
+    private readonly TemporaryHotkey _cardEsc;
+    private readonly TemporaryHotkey _cardCopy;
     private IDisposable? _watcher;
 
     private static CaptureMode ModeOf(PromptDefinition prompt)
@@ -739,22 +726,15 @@ public sealed class AppController
         if (_hotkeys is null) return;
         UnregisterCardHotkeys();
 
-        var esc = _hotkeys.Register(new HotkeyGesture(HotkeyModifiers.None, VK_ESCAPE), OnCardEsc, temporary: true);
-        if (esc.Success) _escHotkeyId = esc.Id;
-        else AppLog.Warn($"Esc could not be registered for the result card: {esc.Error}");
-
+        _cardEsc.Register(TemporaryHotkey.Escape, OnCardEsc);
         if (!HotkeyGesture.TryParse(ResultCopyHotkey, out var gesture, out _)) return;
-        var copy = _hotkeys.Register(gesture, OnCardCopy, temporary: true);
-        if (copy.Success) _copyHotkeyId = copy.Id;
-        else AppLog.Warn($"The copy hotkey could not be registered for the result card: {copy.Error}");
+        _cardCopy.Register(gesture, OnCardCopy);
     }
 
     private void UnregisterCardHotkeys()
     {
-        if (_hotkeys is null) return;
-        if (_escHotkeyId != 0) _hotkeys.Unregister(_escHotkeyId);
-        if (_copyHotkeyId != 0) _hotkeys.Unregister(_copyHotkeyId);
-        _escHotkeyId = _copyHotkeyId = 0;
+        _cardEsc.Release();
+        _cardCopy.Release();
     }
 
     /// <summary>
@@ -764,10 +744,10 @@ public sealed class AppController
     public void ReleaseResultHotkeys()
     {
         UnregisterCardHotkeys();
-        _runEscReleasedForReload = _runEscHotkeyId != 0;
+        _runEscReleasedForReload = _runEsc.IsHeld;
         UnregisterRunEsc();
-        _rescueReleasedForReload = _rescueHotkeyId != 0;
-        UnregisterRescueHotkey();
+        _rescueReleasedForReload = _rescueCopy.IsHeld;
+        _rescueCopy.Release();
     }
 
     /// <summary>Registers the temporary hotkeys again (with the current <see cref="ResultCopyHotkey"/>) if a card, a run or an error pill held them.</summary>
@@ -778,7 +758,7 @@ public sealed class AppController
         _runEscReleasedForReload = false;
         if (_rescueReleasedForReload && _status.IsActionShown && HotkeyGesture.TryParse(ResultCopyHotkey, out var gesture, out _))
         {
-            RegisterRescueHotkey(gesture);
+            _rescueCopy.Register(gesture, OnRescueCopy);
         }
 
         _rescueReleasedForReload = false;
@@ -787,24 +767,16 @@ public sealed class AppController
     // ---- Esc during a run ----
 
     /// <summary>Esc while a run reads the text or waits for the answer, before a card is up. Registered only for that time.</summary>
-    private int _runEscHotkeyId;
+    private readonly TemporaryHotkey _runEsc;
 
     private bool _runEscReleasedForReload;
 
     private void RegisterRunEsc()
     {
-        if (_hotkeys is null || _runEscHotkeyId != 0) return;
-        var esc = _hotkeys.Register(new HotkeyGesture(HotkeyModifiers.None, VK_ESCAPE), OnRunEsc, temporary: true);
-        if (esc.Success) _runEscHotkeyId = esc.Id;
-        else AppLog.Warn($"Esc could not be registered for the run: {esc.Error}");
+        if (!_runEsc.IsHeld) _runEsc.Register(TemporaryHotkey.Escape, OnRunEsc);
     }
 
-    private void UnregisterRunEsc()
-    {
-        if (_hotkeys is null || _runEscHotkeyId == 0) return;
-        _hotkeys.Unregister(_runEscHotkeyId);
-        _runEscHotkeyId = 0;
-    }
+    private void UnregisterRunEsc() => _runEsc.Release();
 
     /// <summary>The same as a click on the progress pill: once the paste has been sent, a cancel is no longer honoured.</summary>
     private void OnRunEsc(long hotkeyTimestamp)
@@ -812,8 +784,6 @@ public sealed class AppController
         AppLog.Info("hotkey: Esc (run)");
         _runCts?.Cancel();
     }
-
-    private const int VK_ESCAPE = 0x1B;
 
     /// <summary>Logs the time from hotkey/choice to the first text of the card, once layout is done and once the frame is rendered.</summary>
     private void LogFirstText(string app, string prompt, long origin, string since)
