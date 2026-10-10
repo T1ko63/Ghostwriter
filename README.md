@@ -1,50 +1,37 @@
-Kuroko
+# 黒子 Kuroko
 
+Designed to be invisible, engineered to be everywhere
 
-a lightweight, system-wide, keyboard-native AI text processing framework for Windows.
+<img width="400" height="320" alt="Screenshot 2026-10-08 074916" src="https://github.com/user-attachments/assets/6cbd501e-4fba-42eb-bd5e-9f23caae6523" />
 
+## Features
 
+### Lightweight and portable
+At approximately 150 MB, Kuroko requires no installation or administrator privileges. It can run directly on restricted work or corporate computers.
 
+### In-text AI processing
+Kuroko processes text wherever the cursor is active, including Outlook, VS Code, WhatsApp, and browsers. It replaces the selected text with the AI-generated result.
 
-Features
- 
-Ultra-lightweight: Only ~150 MB, portable, no installer or admin rights required.
+### Keyboard-first workflow
+Control every step using keyboard shortcuts, from selecting text to applying the transformation.
 
-The only full-featured in-text AI framework:** Replaces text instantly at your cursor position.
+### Fast response
+Requests are sent in under 50 ms. The interface is pre-warmed to avoid loading delays.
 
-100% Keyboard-first: Built for seamless flow without touching the mouse.
+### Flexible prompts
+Type an instruction alongside your text. Kuroko separates the command from the content and returns the result to the active text field.
 
-Ultra-fast: Under 50ms execution speed, works even on older hardware.
+### Minimalist interface
+An optional Raycast-inspired overlay offers fuzzy search and number-key shortcuts for accessing prompts.
 
-Universal Prompt: Execute ad-hoc commands directly from your typed text.
+### Optional Windows blur effects
+A dedicated Windhawk C++ mod adds DWM blur effects without affecting the C# core’s performance.
 
-Flexible UI: Minimalist popup with fuzzy search and number-key quick access.
+### TOML configuration
+Manage API keys, models, hotkeys, and custom prompts in readable TOML files.
 
-Modern Visuals: Optional Windhawk C++ mod for native Windows DWM blur effects.
+## Disclaimer and license
 
-Simple Config: Clean TOML configuration files.
-
-
-
-  
-Quick Start
-
-Download the latest source/binary.
-
-Configure your prompts and API keys (or local Ollama endpoint) in `config.toml`.
-
-Press your hotkey (`Alt+Shift+G`) anywhere you type.
-
-
-
-
-
-
-
-Disclaimer & License
-
-This project was built as a personal tool to solve a specific workflow problem. 
-It is provided **AS-IS** with no active support, roadmap, or maintenance guarantees. 
-Feel free to fork it, adapt it, or use it as inspiration!
+This personal project is provided “AS IS,” without guaranteed support, roadmap, or maintenance. You may fork, adapt, or use it as inspiration.
 
 Distributed under the MIT License.
