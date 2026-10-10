@@ -244,6 +244,19 @@ Abweichungen vom Plan:
 
 ### Manuelle Testcheckliste
 
+Stand 2026-10-10. Punkte 1–11 stammen aus Phase 3, Punkte 12–22 decken die Funktionen ab, die seitdem dazugekommen sind.
+Vor Punkten, die `settings.toml` oder `prompts.toml` ändern, beide Dateien sichern (siehe [Ausweich-Anbieter prüfen](#ausweich-anbieter-prüfen), Schritt 1).
+
+**Stand der Prüfung**
+
+| Punkt | Stand |
+|---|---|
+| 12 Esc-Abbruch (Lesen, KI-Anfrage, zwischen Antwort und Einfügen) | vom User am 2026-10-10 geprüft |
+| 13 Fehlerpille mit Kopier-Hotkey, 14 Tray „Letztes Ergebnis kopieren“ | 14 vom User am 2026-10-10 geprüft, 13 offen |
+| 16 API-Schlüssel im Anmeldeinformationsspeicher | vom User am 2026-10-10 geprüft (Umgebungsvariablen `GEMINI_API_KEY` und `OPENAI_API_KEY` entfernt, beide Schlüssel kommen aus dem Speicher) |
+| 15 Ausweich-Anbieter | offen, Anleitung unten |
+| 1–11, 17–22 | offen |
+
 In **Notepad**, einem **Browser** (Textfeld auf einer Webseite), **Word** und einer **Chat-App** jeweils:
 
 1. **Auswahl:** Text markieren, Prompt-Hotkey (z. B. Strg+Alt+K): nur die Auswahl wird ersetzt.
@@ -258,6 +271,102 @@ In **Notepad**, einem **Browser** (Textfeld auf einer Webseite), **Word** und ei
 9. **Config-Reload mit Syntaxfehler:** in `settings.toml` eine Zeile kaputt machen und speichern: Meldung mit Datei und Zeile, alte Config bleibt aktiv; Fehler beheben, Config wird wieder geladen.
 10. **Zwischenablage:** vorher ein Bild oder formatierten Text kopieren: nach jeder Ersetzung ist er unverändert in der Zwischenablage.
 11. **Tray:** „Mit Windows starten“ umschalten: Häkchen und `settings.toml` stimmen überein. „Config-Ordner öffnen“ funktioniert.
+    Ob der Eintrag wirklich in der Registry steht, zeigt
+    `Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'Kuroko (Claude)'` in PowerShell (nur lesend).
+
+**Neu seit Phase 3** (reicht in einer App, am besten Notepad; Punkt 13 zusätzlich im Browser):
+
+12. **Esc-Abbruch** in allen drei Phasen, jeweils mit Text unverändert und Zwischenablage unverändert:
+    a) gleich nach dem Hotkey, solange gelesen wird (langer Text hilft); b) während die Pille „arbeitet“ (KI-Anfrage läuft);
+    c) direkt nachdem die Antwort da ist, vor dem Einfügen (mit langsamem Modell oder großem Text am ehesten zu treffen).
+    Nach dem Einfügen-Befehl bricht Esc nicht mehr ab, das ist gewollt. Bei einem Prompt mit `output = "overlay"` schließt Esc die Karte.
+13. **Fehlerpille mit Kopier-Hotkey:** Prompt starten und während der Anfrage in ein anderes Feld klicken (wie Punkt 7). Die Pille zeigt
+    „Das Fenster hat gewechselt…“ und dahinter „Strg+Alt+C kopiert das Ergebnis (auch später über das Tray-Menü).“ (bzw. dein
+    `result_copy_hotkey`). Hotkey drücken, solange die Pille sichtbar ist: Die Antwort liegt in der Zwischenablage. Nach dem Verschwinden der Pille
+    ist der Hotkey wieder frei (in einer anderen App testen).
+14. **Tray „Letztes Ergebnis kopieren“:** nach Punkt 13 (oder jedem Lauf) später im Tray-Menü wählen: die letzte Antwort liegt in der Zwischenablage.
+    Ohne bisherigen Lauf ist der Eintrag nicht nutzbar.
+15. **Ausweich-Anbieter (`fallback_provider`):** siehe [Ausweich-Anbieter prüfen](#ausweich-anbieter-prüfen).
+16. **API-Schlüssel im Anmeldeinformationsspeicher:** Umgebungsvariable entfernen (oder `api_key_env` leeren), Kuroko neu starten,
+    Tray → „API-Schlüssel …“: Anbieter wählen, Schlüssel speichern, „Aktuell: gespeichert in der Windows-Anmeldeinformationsverwaltung (Kuroko:&lt;name&gt;)“.
+    Ein Prompt mit diesem Anbieter läuft. „Entfernen“ löscht den Eintrag (Systemsteuerung → Anmeldeinformationsverwaltung → Windows-Anmeldeinformationen
+    zeigt ihn nicht mehr). Ist die Umgebungsvariable gesetzt, zeigt der Dialog, dass sie Vorrang hat.
+17. **Tray „Prompts bearbeiten“ / „Einstellungen bearbeiten“:** öffnen `prompts.toml` bzw. `settings.toml` im zugeordneten Editor, sonst in Notepad.
+    Speichern lädt die Config neu („Konfiguration geladen (N Prompts).“).
+18. **Tray „Verbindung testen“** (prüft den `default_provider`): mit funktionierendem Anbieter „Verbindung zu „…“ klappt (Modell, N ms).“;
+    während Weg A aus Punkt 15 aktiv ist „openai: Keine Verbindung (Internet, Proxy oder base_url prüfen).“
+19. **Hinweis bei fehlendem Schlüssel beim Start:** in `settings.toml` vorübergehend `default_provider` auf einen Anbieter ohne Schlüssel stellen
+    (bei dir z. B. `"anthropic"`), Kuroko beenden und neu starten: Tray-Meldung „Für „anthropic“ wurde kein API-Schlüssel gefunden. Erwartet wird die
+    Umgebungsvariable ANTHROPIC_API_KEY … oder ein Schlüssel über Tray-Symbol → API-Schlüssel …“. Danach `default_provider` zurückstellen.
+    (Den Erststart-Teil „Kuroko läuft. Overlay öffnen: …“ gibt es nur ohne vorhandene Config; dafür die echte Config nicht löschen.)
+20. **Zwischenablage-Verlauf (Win+V):** Verlauf in den Windows-Einstellungen einschalten. Etwas Eigenes kopieren, dann einen Prompt *ohne* Markierung
+    im ganzen Feld ausführen. In Win+V steht der eigene Eintrag nur einmal, die KI-Antwort und der interne Platzhalter erscheinen nicht.
+    Unvermeidbar: Liest Kuroko per Strg+C, legt die Ziel-App den markierten Text selbst in den Verlauf.
+21. **Version / Über-Dialog:** Tray → „Über Kuroko …“ zeigt „Kuroko 1.0.0+&lt;Commit&gt;“, MIT-Lizenz und den GitHub-Link; dieselbe Version steht im Log
+    in der Zeile `Start, version …`.
+22. **JSON-Schema im Editor:** `settings.toml` aus dem Tray öffnen (VS Code/VSCodium mit „Even Better TOML“, Einrichtung siehe
+    [`docs/README.md`](README.md#editor-unterstützung-json-schema)). Ein unbekannter Schlüssel (z. B. `timeout` statt `timeout_seconds`) wird unterstrichen,
+    beim Tippen in `[providers.*]` erscheinen die erlaubten Schlüssel. Kuroko selbst meldet unbekannte Schlüssel unabhängig davon im Log.
+
+#### Ausweich-Anbieter prüfen
+
+Kuroko fragt den Ausweich-Anbieter nur bei „keine Verbindung“, Serverfehler 5xx und Rate-Limit 429, einmal und nur vor dem ersten Antwortstück.
+Lokale Anbieter (localhost, LAN) nutzen den globalen `fallback_provider` nicht, sondern nur einen im eigenen Block. Deshalb gibt es zwei Wege.
+Beide ändern nur Dateien im Config-Ordner und lassen sich vollständig zurückdrehen. Achtung: Beim Ausweichen geht der Testtext wirklich an den
+Ausweich-Anbieter, also einen harmlosen Text nehmen.
+
+1. **Sichern.** In PowerShell:
+   ```powershell
+   $bak = "$env:APPDATA\Kuroko\backup-fallbacktest"
+   New-Item -ItemType Directory -Force $bak | Out-Null
+   Copy-Item "$env:APPDATA\Kuroko\settings.toml", "$env:APPDATA\Kuroko\prompts.toml" $bak
+   ```
+2. **Weg A: Anbieter nicht erreichbar (keine Verbindung).** Voraussetzung: oben in `settings.toml` steht `fallback_provider = "gemini"` (oder ein anderer
+   Anbieter mit Schlüssel), und `default_provider` ist ein Cloud-Anbieter, z. B. `"openai"`. Unter `[providers.openai]` vorübergehend diese Zeile ergänzen
+   und speichern:
+   ```toml
+   base_url = "https://kuroko-test.invalid/v1"
+   ```
+   Die Endung `.invalid` ist reserviert und wird nie aufgelöst; die Anfrage verlässt den Rechner also nicht, auch nicht der Schlüssel.
+   Dann in Notepad einen Satz markieren und einen Prompt ohne eigenen `provider` ausführen (z. B. „Correction“).
+   **Erwartet:** Die Pille zeigt kurz „openai nicht erreichbar, frage gemini …“, der Text wird ersetzt, danach erscheint
+   „Antwort von gemini (openai war nicht erreichbar).“ Im Log: `openai: request failed fast …, retrying once.` und danach der Lauf über gemini.
+   Gegenprobe: Esc während „frage gemini …“ bricht ab, Text unverändert. Zum Schluss die Zeile `base_url` wieder löschen und speichern.
+3. **Weg B: Serverfehler 503 oder Rate-Limit 429** mit dem Test-Server aus dem Repository (lauscht nur auf 127.0.0.1, braucht keine Adminrechte,
+   speichert nichts). In einem eigenen PowerShell-Fenster im Repository-Ordner starten und offen lassen:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File tools\fake-llm-server.ps1            # antwortet mit 503
+   powershell -ExecutionPolicy Bypass -File tools\fake-llm-server.ps1 -Status 429
+   ```
+   Ans Ende von `settings.toml` einen Test-Anbieter anhängen (der Ausweich-Anbieter steht im eigenen Block, weil der Test-Server lokal ist):
+   ```toml
+   [providers.ausfalltest]
+   type = "openai-compatible"
+   base_url = "http://127.0.0.1:8089/v1"
+   model = "test"
+   fallback_provider = "gemini"
+   ```
+   und ans Ende von `prompts.toml` einen Test-Prompt (ohne Hotkey, er erscheint im Overlay):
+   ```toml
+   [[prompt]]
+   name = "Ausfalltest"
+   provider = "ausfalltest"
+   prompt = "Gib den Text unverändert zurück."
+   ```
+   Beide Dateien speichern, Text markieren, Overlay öffnen, „Ausfalltest“ wählen.
+   **Erwartet:** Das Server-Fenster zeigt bei 503 zwei Anfragen (Kuroko wiederholt Serverfehler einmal nach kurzer Pause), bei 429 eine
+   (ohne `Retry-After` wird nicht wiederholt). Dann zeigt die Pille
+   „ausfalltest nicht erreichbar, frage gemini …“ und am Ende „Antwort von gemini (ausfalltest war nicht erreichbar).“
+   Mit beendetem Server (Strg+C) ergibt derselbe Prompt den Weg „keine Verbindung“, ebenfalls mit Ausweichen.
+   **Gegenprobe ohne Ausweichen:** In `[providers.ausfalltest]` die Zeile `fallback_provider` auf `""` setzen: Jetzt kommt die Fehlermeldung
+   („ausfalltest: Serverfehler beim Anbieter …“ bzw. „Rate-Limit …“), der Text bleibt unverändert.
+4. **Zurücksetzen.** Server-Fenster mit Strg+C schließen, dann die Sicherung zurückspielen und den Ordner löschen:
+   ```powershell
+   Copy-Item "$bak\settings.toml", "$bak\prompts.toml" "$env:APPDATA\Kuroko" -Force
+   Remove-Item -Recurse $bak
+   ```
+   Kuroko lädt die Dateien nach dem Zurückkopieren selbst neu („Konfiguration geladen …“). Hast du zwischendurch andere Einstellungen geändert,
+   stattdessen nur die Testblöcke von Hand löschen.
 
 ---
 
