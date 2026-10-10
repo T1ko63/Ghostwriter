@@ -449,8 +449,8 @@ Während die Antwort noch läuft, wird der Kopier-Hotkey ignoriert (kein halbes 
 | | |
 |---|---|
 | Hotkey → Overlay (erster WPF-Frame, warm; ohne DWM-Komposition) | Median 2–3 ms, p95 4 ms; erster nach dem Start ca. 9 ms (mit dem neuen Look unverändert) |
-| Hotkey → Overlay im Alltag (aus dem Log, mit Blur) | 7–10 ms (Explorer), 16 ms (VSCodium) |
-| Hotkey/Auswahl → Request verlässt die App | Median 5 ms (erster nach dem Start 32 ms); im Alltag 5–27 ms |
+| Hotkey → Overlay im Alltag (aus dem Log, mit Blur, Stand 2026-10-10) | Median 18 ms, 90 % unter 27 ms (34 Aufrufe in Explorer, VSCodium, Browser und anderen Apps); erster nach dem Start 45–80 ms |
+| Hotkey/Auswahl → Request verlässt die App | gemessen: Median 5 ms (erster nach dem Start 32 ms); im Alltag (aus dem Log, 105 Anfragen, Stand 2026-10-10) Median 18 ms, 90 % unter 32 ms |
 | Hotkey → Ergebnis eingefügt (Korrektur, kurzer Text) | Median 0,6 s, p95 0,9 s (davon fast alles Antwortzeit des Modells) |
 | Start bis bereit | Median ca. 0,38 s im Prozess, ca. 0,54 s ab Prozessstart (davon ca. 0,3 s Fenster erzeugen und Overlay vorwärmen) |
 | Speicher | aktiv ca. 150–190 MB privat; nach 90 s Ruhe ca. 20 MB Working Set |
