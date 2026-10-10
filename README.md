@@ -35,17 +35,21 @@ Store API keys in the Windows Credential Manager from the tray menu instead of k
 
 ## Getting started
 
-1. Build Kuroko (requires the .NET 10 SDK):
-   ```powershell
-   powershell -File tools\publish.ps1                 # small build, needs the .NET 10 Desktop Runtime
-   powershell -File tools\publish.ps1 -SelfContained  # ~150 MB, runs anywhere
-   ```
-   The result lands in `publish\Kuroko` or `publish\Kuroko-selfcontained`. Start `Kuroko.exe`; it lives in the tray.
+1. Download the zip (`Kuroko-<version>-win-x64.zip`) from the latest release on the [GitHub Releases page](https://github.com/T1ko63/Kuroko/releases/latest), unzip it into any folder and start `Kuroko.exe`; it lives in the tray.
 
-   The small build is the recommended one. If the .NET 10 Desktop Runtime is missing, Windows says so when `Kuroko.exe` starts and offers to open the download page. Install the **.NET Desktop Runtime 10** (x64) from [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet/10.0); a per-user install works without administrator rights. Where nothing can be installed, use the self-contained build instead.
+   The zip contains the small build, which needs the **.NET Desktop Runtime 10** (x64). If it is missing, Windows says so when `Kuroko.exe` starts and offers to open the download page. Install it from [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet/10.0); a per-user install works without administrator rights. Where nothing can be installed, build the self-contained variant instead (see [Build from source](#build-from-source)).
 2. On first start, Kuroko creates `settings.toml` and `prompts.toml` in `%APPDATA%\Kuroko` (or in the folder set by `KUROKO_CONFIG_DIR`). Commented templates with every key are in [`config/`](config).
 3. Add an API key via the tray icon → **API keys …** (**API-Schlüssel …** in the German UI). It is stored as `Kuroko:<provider>` (for example `Kuroko:gemini`) in the Windows Credential Manager. Alternatively, set `api_key_env` or `api_key` in the provider block of `settings.toml` (tray → **Edit settings** opens it). If no key is found at start, a hint names the environment variable Kuroko expects. Tray → **Test connection** checks key, model and network with one tiny request.
 4. Select text in any app, or just type, and press `Ctrl+Shift+Space` to pick a prompt.
+
+## Build from source
+
+Building requires the .NET 10 SDK:
+```powershell
+powershell -File tools\publish.ps1                 # small build, needs the .NET 10 Desktop Runtime
+powershell -File tools\publish.ps1 -SelfContained  # ~150 MB, runs anywhere
+```
+The result lands in `publish\Kuroko` or `publish\Kuroko-selfcontained`. The small build is the same one as in the release zip; the self-contained build runs on PCs where the .NET 10 Desktop Runtime cannot be installed.
 
 ## Usage
 
