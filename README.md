@@ -41,6 +41,8 @@ Store API keys in the Windows Credential Manager from the tray menu instead of k
    powershell -File tools\publish.ps1 -SelfContained  # ~150 MB, runs anywhere
    ```
    The result lands in `publish\Kuroko` or `publish\Kuroko-selfcontained`. Start `Kuroko.exe`; it lives in the tray.
+
+   The small build is the recommended one. If the .NET 10 Desktop Runtime is missing, Windows says so when `Kuroko.exe` starts and offers to open the download page. Install the **.NET Desktop Runtime 10** (x64) from [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet/10.0); a per-user install works without administrator rights. Where nothing can be installed, use the self-contained build instead.
 2. On first start, Kuroko creates `settings.toml` and `prompts.toml` in `%APPDATA%\Kuroko` (or in the folder set by `KUROKO_CONFIG_DIR`). Commented templates with every key are in [`config/`](config).
 3. Add an API key via the tray icon → **API keys …** (**API-Schlüssel …** in the German UI). It is stored as `Kuroko:<provider>` (for example `Kuroko:gemini`) in the Windows Credential Manager. Alternatively, set `api_key_env` or `api_key` in the provider block of `settings.toml`.
 4. Select text in any app, or just type, and press `Ctrl+Shift+Space` to pick a prompt.
@@ -91,4 +93,4 @@ Details are in the German guide under [Datenschutz](docs/README.md#datenschutz).
 
 This personal project is provided “AS IS,” without guaranteed support, roadmap, or maintenance. You may fork, adapt, or use it as inspiration.
 
-Distributed under the MIT License.
+Distributed under the [MIT License](LICENSE).

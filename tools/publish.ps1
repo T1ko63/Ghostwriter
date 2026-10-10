@@ -18,3 +18,6 @@ if ($LASTEXITCODE -ne 0) { throw "publish failed" }
 
 $size = (Get-ChildItem $out -Recurse -File | Measure-Object Length -Sum).Sum / 1MB
 "Published to $out ({0:F1} MB)" -f $size
+if (-not $SelfContained) {
+    'The target PC needs the .NET 10 Desktop Runtime (x64): https://dotnet.microsoft.com/download/dotnet/10.0'
+}

@@ -282,6 +282,13 @@ powershell -File tools\publish.ps1 # Release mit ReadyToRun nach publish\Kuroko
 powershell -File tools\publish.ps1 -SelfContained   # läuft ohne installierte .NET-Runtime (~150 MB)
 ```
 
+Empfohlen ist die kleine Variante (`publish\Kuroko`, etwa 2 MB). Sie braucht die **.NET Desktop Runtime 10** (x64) von
+[dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet/10.0). Fehlt sie, meldet Windows das beim Start von
+`Kuroko.exe` und bietet an, die Download-Seite zu öffnen. Wo sich nichts installieren lässt, die Variante mit `-SelfContained` nehmen.
+
+Die Versionsnummer steht in `Directory.Build.props` (`<Version>`); Kuroko schreibt sie beim Start ins Log und zeigt sie im
+Tray-Menü unter „Über Kuroko …“.
+
 Das Icon wird mit `tools\make-icon.ps1` erzeugt.
 
 ## Aufbau
@@ -310,6 +317,8 @@ Während die Antwort noch läuft, wird der Kopier-Hotkey ignoriert (kein halbes 
 
 ## Fehlersuche
 
+* **Startet nicht, Meldung „.NET Desktop Runtime“:** Die kleine Variante braucht die .NET Desktop Runtime 10 (x64); installieren
+  (siehe [Bauen, testen, ausführen](#bauen-testen-ausführen)) oder die Variante mit `-SelfContained` verwenden.
 * **Log:** `kuroko.log` im Config-Ordner (Inhalt siehe [Datenschutz](#datenschutz); nie Texte oder Schlüssel).
 * **Hotkey reagiert nicht:** Wenn eine andere App ihn belegt, meldet Kuroko das beim Start/Neuladen. Anderen Hotkey wählen.
 * **„API-Schlüssel fehlt":** Schlüssel über Tray-Symbol → „API-Schlüssel …“ speichern, oder `api_key` bzw.

@@ -93,6 +93,10 @@ public static class Loc
         ["keys_failed"] = ("Das hat nicht geklappt (Details in kuroko.log).", "That did not work (details in kuroko.log)."),
         ["keys_empty"] = ("Bitte zuerst einen Schlüssel eingeben.", "Please enter a key first."),
 
+        ["tray_about"] = ("Über Kuroko …", "About Kuroko …"),
+        ["about_text"] = ("Kuroko {0}\n\nVeröffentlicht unter der MIT-Lizenz.\nhttps://github.com/T1ko63/Kuroko",
+            "Kuroko {0}\n\nReleased under the MIT License.\nhttps://github.com/T1ko63/Kuroko"),
+
         ["tray_quit"] = ("Beenden", "Quit"),
     };
 

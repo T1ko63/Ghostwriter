@@ -98,7 +98,7 @@ public partial class App : Application
 
         AppLog.Init(_configDir);
         var started = Stopwatch.GetTimestamp();
-        AppLog.Info($"Start, elevated={TargetInfo.SelfIsElevated}");
+        AppLog.Info($"Start, version {AppVersion.Current}, elevated={TargetInfo.SelfIsElevated}");
         foreach (var line in migration) AppLog.Warn(line);
         _autostart.RemoveLegacyEntries();
         InstallCrashGuards();
@@ -478,8 +478,12 @@ public partial class App : Application
         new TrayMenuItem(Loc.Get("tray_keys"), ShowKeysWindow),
         new TrayMenuItem(Loc.Get("tray_autostart"), ToggleAutostart, Checked: _config!.Current.Settings.Autostart),
         new TrayMenuItem(string.Empty, () => { }, Separator: true),
+        new TrayMenuItem(Loc.Get("tray_about"), ShowAbout),
         new TrayMenuItem(Loc.Get("tray_quit"), Shutdown),
     ];
+
+    private static void ShowAbout()
+        => MessageBox.Show(Loc.Get("about_text", AppVersion.Current), "Kuroko", MessageBoxButton.OK, MessageBoxImage.Information);
 
     protected override void OnExit(ExitEventArgs e)
     {
