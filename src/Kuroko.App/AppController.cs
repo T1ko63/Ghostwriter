@@ -13,23 +13,6 @@ using Kuroko.Platform.TextIntegration;
 
 namespace Kuroko.App;
 
-/// <summary>result_position: a fixed place, the place of the prompt picker (follow), the text cursor or the mouse.</summary>
-public enum ResultPlacement
-{
-    Fixed,
-    Follow,
-    Caret,
-    Mouse,
-}
-
-/// <summary>How a notice in the status pill looks: an error, a quiet confirmation, or a progress bar that stays.</summary>
-public enum NoticeKind
-{
-    Error,
-    Info,
-    Progress,
-}
-
 /// <summary>
 /// Ties the pieces together: hotkey -> (overlay) -> read text -> run prompt -> replace text.
 /// All entry points run on the UI thread. Only one run is active at a time.
