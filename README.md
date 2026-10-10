@@ -102,6 +102,10 @@ Details are in the German guide under [Datenschutz](docs/README.md#datenschutz).
 * [`config/`](config): commented templates of `settings.toml` and `prompts.toml` with every key.
 * [`docs/refactoring-report.md`](docs/refactoring-report.md): code audit from October 2026 (German, written when Kuroko was still called Ghostwriter).
 
+## Development
+
+Kuroko was developed with assistance from generative AI tools. AI-generated contributions were reviewed and tested before integration.
+
 ## Disclaimer and license
 
 This personal project is provided “AS IS,” without guaranteed support, roadmap, or maintenance. You may fork, adapt, or use it as inspiration.
