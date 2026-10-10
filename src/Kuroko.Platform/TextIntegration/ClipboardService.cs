@@ -69,6 +69,9 @@ public sealed class ClipboardService : IClipboard, IDisposable
         var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
         while (true)
         {
+            // A cancel ends the wait at once: without this check the cancelled delay below completes immediately and
+            // the loop spins until the deadline.
+            ct.ThrowIfCancellationRequested();
             if (GetClipboardSequenceNumber() != since) return true;
             var remaining = deadline - Environment.TickCount64;
             if (remaining <= 0) return false;

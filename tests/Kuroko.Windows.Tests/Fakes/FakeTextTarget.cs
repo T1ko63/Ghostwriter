@@ -62,6 +62,9 @@ internal sealed class FakeTextTarget : IClipboard, IKeyboard
     /// <summary>The app first empties the clipboard and fills it in a second update (seen in some editors).</summary>
     public bool CopiesInTwoSteps { get; set; }
 
+    /// <summary>Called right after Ctrl+C was sent (e.g. to cancel while the read waits for the copy).</summary>
+    public Action? OnCopySent { get; set; }
+
     /// <summary>Called right after Ctrl+V was sent (e.g. to cancel at exactly that moment).</summary>
     public Action? OnPasteSent { get; set; }
 
@@ -93,6 +96,7 @@ internal sealed class FakeTextTarget : IClipboard, IKeyboard
             case "C":
                 var copied = Selection;
                 if (copied.Length > 0) React(() => CopyFromApp(copied));
+                OnCopySent?.Invoke();
                 break;
             case "V":
                 var offer = _offer;
@@ -158,8 +162,9 @@ internal sealed class FakeTextTarget : IClipboard, IKeyboard
         var deadline = Environment.TickCount64 + (long)timeout.TotalMilliseconds;
         while (SequenceNumber == since)
         {
+            ct.ThrowIfCancellationRequested();
             if (Environment.TickCount64 >= deadline) return false;
-            await Task.Delay(1, CancellationToken.None);
+            await Task.Delay(1, ct);
         }
 
         return true;
