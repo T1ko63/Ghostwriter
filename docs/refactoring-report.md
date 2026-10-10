@@ -252,9 +252,9 @@ Vor Punkten, die `settings.toml` oder `prompts.toml` ändern, beide Dateien sich
 | Punkt | Stand |
 |---|---|
 | 12 Esc-Abbruch (Lesen, KI-Anfrage, zwischen Antwort und Einfügen) | vom User am 2026-10-10 geprüft |
-| 13 Fehlerpille mit Kopier-Hotkey, 14 Tray „Letztes Ergebnis kopieren“ | 14 vom User am 2026-10-10 geprüft, 13 offen |
+| 13 Fehlerpille mit Kopier-Hotkey, 14 Tray „Letztes Ergebnis kopieren“ | vom User am 2026-10-10 geprüft |
 | 16 API-Schlüssel im Anmeldeinformationsspeicher | vom User am 2026-10-10 geprüft (Umgebungsvariablen `GEMINI_API_KEY` und `OPENAI_API_KEY` entfernt, beide Schlüssel kommen aus dem Speicher) |
-| 15 Ausweich-Anbieter | offen, Anleitung unten |
+| 15 Ausweich-Anbieter | vom User am 2026-10-10 geprüft (Weg A und Weg B, Anleitung unten) |
 | 1–11, 17–22 | offen |
 
 In **Notepad**, einem **Browser** (Textfeld auf einer Webseite), **Word** und einer **Chat-App** jeweils:
