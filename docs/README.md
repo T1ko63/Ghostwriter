@@ -106,7 +106,25 @@ noch, bittet Kuroko darum, sie zu beenden, und startet nicht. Alte Autostart-Ein
 Vollständige Vorlagen mit allen Schlüsseln, Standardwerten und kurzen Kommentaren liegen im Repository unter
 [`config/settings.example.toml`](config/settings.example.toml) und [`config/prompts.example.toml`](config/prompts.example.toml).
 Zum Verwenden nach `%APPDATA%\Kuroko\` kopieren und `.example` aus dem Namen entfernen. Die Vorlagen enthalten keine
-API-Schlüssel; Schlüssel am besten per `api_key_env` aus einer Umgebungsvariable lesen und nie ins Repository einchecken.
+API-Schlüssel; Schlüssel nie ins Repository einchecken.
+
+### API-Schlüssel
+
+Am einfachsten über das Tray-Symbol → **API-Schlüssel …**: Anbieter wählen, Schlüssel einfügen, Speichern. Der Schlüssel
+landet in der Windows-Anmeldeinformationsverwaltung (generische Anmeldeinformation `Kuroko:<anbieter>`, z. B.
+`Kuroko:gemini` für `[providers.gemini]`, nur für das eigene Benutzerkonto) und gilt sofort, ohne Neustart. Dort lässt
+er sich auch wieder entfernen; der Dialog zeigt an, woher der Schlüssel eines Anbieters gerade kommt.
+
+Kuroko sucht den Schlüssel in dieser Reihenfolge, der erste Treffer gilt:
+
+1. `api_key` direkt im Provider-Block (nur lokal, nie einchecken),
+2. die Umgebungsvariable aus `api_key_env`,
+3. der gespeicherte Eintrag `Kuroko:<anbieter>` in der Windows-Anmeldeinformationsverwaltung.
+
+Bestehende Konfigurationen mit `api_key_env` funktionieren unverändert. Für einen gespeicherten Schlüssel muss in
+settings.toml nichts stehen; `api_key_env` darf trotzdem bleiben (ist die Variable gesetzt, hat sie Vorrang).
+Alternativ in der Eingabeaufforderung: `cmdkey /generic:Kuroko:gemini /user:Kuroko /pass` (fragt den Schlüssel ab,
+ohne dass er im Verlauf landet), danach „Config neu laden“.
 
 ### settings.toml (Auszug)
 
@@ -250,8 +268,9 @@ Während die Antwort noch läuft, wird der Kopier-Hotkey ignoriert (kein halbes 
 
 * **Log:** `kuroko.log` im Config-Ordner (enthält nur Längen und Zeiten, nie Texte oder Schlüssel).
 * **Hotkey reagiert nicht:** Wenn eine andere App ihn belegt, meldet Kuroko das beim Start/Neuladen. Anderen Hotkey wählen.
-* **„API-Schlüssel fehlt":** `api_key` oder `api_key_env` im Provider-Block setzen; Umgebungsvariablen werden beim
-  Start gelesen (nach dem Setzen der Variable die App neu starten oder „Config neu laden").
+* **„API-Schlüssel fehlt":** Schlüssel über Tray-Symbol → „API-Schlüssel …“ speichern, oder `api_key` bzw.
+  `api_key_env` im Provider-Block setzen; Umgebungsvariablen werden beim Start gelesen (nach dem Setzen der Variable
+  die App neu starten oder „Config neu laden").
 
 ## Entwickler-Schalter (Umgebungsvariablen)
 

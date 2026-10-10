@@ -90,8 +90,11 @@ selection  = "#40000000"
 #
 #   type               required: openai | gemini | anthropic | openai-compatible
 #   model              required: model name
-#   api_key_env        name of the environment variable that holds the key (recommended)
+#   api_key_env        name of the environment variable that holds the key
 #   api_key            key written directly in the file (local only, never commit)
+#
+# The key is looked up in this order: api_key, then the variable from api_key_env, then the Windows
+# Credential Manager entry "Kuroko:<name>" (store it via tray icon -> "API keys ..."; no setting needed here).
 #   base_url           optional, defaults per type
 #   timeout_seconds    optional, 1-600 (default 30)
 #   reasoning          optional: off | default | low | medium | high (default off)

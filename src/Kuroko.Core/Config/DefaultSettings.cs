@@ -114,6 +114,7 @@ public static class DefaultSettings
             selection  = "#40000000"
 
             # Pro Anbieter: type, model und ein API-Schlüssel (api_key direkt ODER api_key_env = Name einer Umgebungsvariable).
+            # Ohne beides gilt der Schlüssel aus der Windows-Anmeldeinformationsverwaltung (Tray-Symbol → API-Schlüssel …).
             # Modellnamen gehören nur hierher; sie sind nirgends im Programm festgelegt - bitte auf aktuelle Namen prüfen.
             # reasoning = "off" hält die Antwort schnell (kein langes Nachdenken). Weitere Werte: default | low | medium | high.
             # Weitere optionale Felder: base_url, timeout_seconds (Standard 30), max_output_tokens (0 = automatisch).
