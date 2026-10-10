@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Windows;
+using Kuroko.App.Keys;
 using Kuroko.App.Overlay;
 using Kuroko.App.Themes;
 using Kuroko.Core.Config;
@@ -13,6 +14,7 @@ using Kuroko.Core.Providers;
 using Kuroko.Platform.Autostart;
 using Kuroko.Platform.Hotkeys;
 using Kuroko.Platform.Native;
+using Kuroko.Platform.Secrets;
 using Kuroko.Platform.TextIntegration;
 using Kuroko.Platform.Tray;
 
@@ -36,6 +38,8 @@ public partial class App : Application
     private HotkeyManager? _hotkeys;
     private TrayIcon? _tray;
     private ThemeService? _theme;
+    private readonly CredentialKeyStore _keyStore = new();
+    private ApiKeysWindow? _keysWindow;
 
     /// <summary>Single-instance locks of the builds under the old product names (Ghostwriter, InstaPrompt).</summary>
     private static readonly string[] LegacyMutexNames =
@@ -112,7 +116,7 @@ public partial class App : Application
         }
 
         // Both files are read before any window exists; a broken file never prevents the start.
-        _config = new ConfigManager(_configDir, Environment.GetEnvironmentVariable);
+        _config = new ConfigManager(_configDir, Environment.GetEnvironmentVariable, _keyStore);
         var firstRun = !File.Exists(_config.SettingsPath);
         var loaded = _config.Load();
         LogIssues(loaded);
@@ -224,6 +228,27 @@ public partial class App : Application
     }
 
     // ---- configuration ----
+
+    private void ShowKeysWindow()
+    {
+        if (_keysWindow is { } open)
+        {
+            open.Activate();
+            return;
+        }
+
+        _keysWindow = new ApiKeysWindow(_keyStore, () => _config!.Current.Settings.Providers, () =>
+        {
+            // A stored or removed key takes effect at once; only errors are reported.
+            var result = _config!.Reload(force: true);
+            LogIssues(result);
+            ApplyConfig(result, initial: false);
+            ReportIssues(result, manual: false);
+        });
+        _keysWindow.Closed += (_, _) => _keysWindow = null;
+        _keysWindow.Show();
+        _keysWindow.Activate();
+    }
 
     private void ReloadConfig(bool manual)
     {
@@ -450,6 +475,7 @@ public partial class App : Application
     [
         new TrayMenuItem(Loc.Get("tray_open_config"), () => Process.Start(new ProcessStartInfo(_configDir) { UseShellExecute = true })),
         new TrayMenuItem(Loc.Get("tray_reload"), () => ReloadConfig(manual: true)),
+        new TrayMenuItem(Loc.Get("tray_keys"), ShowKeysWindow),
         new TrayMenuItem(Loc.Get("tray_autostart"), ToggleAutostart, Checked: _config!.Current.Settings.Autostart),
         new TrayMenuItem(string.Empty, () => { }, Separator: true),
         new TrayMenuItem(Loc.Get("tray_quit"), Shutdown),
