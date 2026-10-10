@@ -1,12 +1,8 @@
-using System.Diagnostics;
-using System.Text;
 using Kuroko.App.Overlay;
 using Kuroko.Core.Config;
 using Kuroko.Core.Diagnostics;
-using Kuroko.Core.Hotkeys;
 using Kuroko.Core.Localization;
 using Kuroko.Core.Prompts;
-using Kuroko.Core.Providers;
 using Kuroko.Core.Undo;
 using Kuroko.Platform.Hotkeys;
 using Kuroko.Platform.TextIntegration;
@@ -15,15 +11,15 @@ using static Kuroko.App.FailureMessages;
 namespace Kuroko.App;
 
 /// <summary>
-/// Ties the pieces together: hotkey -> (overlay) -> read text -> run prompt -> replace text.
-/// All entry points run on the UI thread. Only one run is active at a time.
+/// Ties the pieces together: hotkey -> (overlay) -> read text -> run prompt -> replace text or show the card.
+/// All entry points run on the UI thread. Only one run is active at a time. The runs themselves are <see cref="ReplaceRun"/>,
+/// <see cref="CardRun"/> and <see cref="UndoRun"/>; this class decides whether a hotkey may start one and owns the prompt picker.
 /// </summary>
 public sealed class AppController
 {
     private readonly ITextAccess _text;
     private readonly IOverlayView _overlay;
     private readonly IStatusView _status;
-    private readonly IPromptRunner _runner;
     private readonly Func<IReadOnlyList<PromptDefinition>> _prompts;
 
     private RunSession? _session;
@@ -33,7 +29,10 @@ public sealed class AppController
     private readonly RunState _run;
     private readonly ResultCard _card;
     private readonly LatencyLog _latency;
+    private readonly ReplaceRun _replaceRun;
+    private readonly CardRun _cardRun;
     private readonly UndoRun _undo;
+    private readonly AnchorPolicy _anchors = new();
 
     /// <param name="prompts">Read on every use, so a reloaded prompts.toml is picked up without rebuilding anything.</param>
     /// <param name="hotkeys">Needed for the temporary hotkeys: Esc during a run, Esc and copy while the result card is up.</param>
@@ -47,7 +46,6 @@ public sealed class AppController
         _text = text;
         _overlay = overlay;
         _status = status;
-        _runner = runner;
         _prompts = prompts;
         _warmUp = warmUp;
         _desktop = desktop ?? new Win32Desktop();
@@ -55,6 +53,8 @@ public sealed class AppController
         _latency = new LatencyLog(_desktop);
         _card = new ResultCard(status, _desktop, hotkeys, clipboard, _run, () => ResultCopyHotkey);
         _lastResult = new LastResult(status, hotkeys, clipboard, () => ResultCopyHotkey);
+        _replaceRun = new ReplaceRun(text, status, runner, _desktop, _run, _anchors, _lastResult, History);
+        _cardRun = new CardRun(text, status, runner, _desktop, _run, _anchors, _lastResult, _card, _latency);
         _undo = new UndoRun(text, status, _run, _anchors, History);
 
         _overlay.PromptChosen += prompt => _ = OnPromptChosenAsync(prompt);
@@ -62,8 +62,6 @@ public sealed class AppController
         _overlay.Dismissed += () => _ = CloseOverlayAsync(restoreFocus: false);
         _status.CancelRequested += OnStatusCancelRequested;
     }
-
-    private readonly AnchorPolicy _anchors = new();
 
     public OverlayPosition Position
     {
@@ -227,7 +225,7 @@ public sealed class AppController
         _session = null;
         _overlay.HideOverlay();
         _run.Busy = false;
-        _status.ShowError(Loc.Get("err_unexpected", ex.GetType().Name), session.Anchor);
+        _status.ShowError(Unexpected(ex), session.Anchor);
     }
 
     private async Task ShowOverlayCoreAsync(RunSession session, long hotkeyTimestamp)
@@ -338,97 +336,13 @@ public sealed class AppController
 
     // ---- run ----
 
-    private async Task ExecuteAsync(RunSession session, PromptDefinition prompt, bool restoreFocus, long? hotkeyTimestamp)
-    {
-        if (prompt.Output == PromptOutput.Overlay)
-        {
-            await ExecuteOverlayAsync(session, prompt, restoreFocus, hotkeyTimestamp);
-            return;
-        }
+    private static CaptureMode ModeOf(PromptDefinition prompt)
+        => prompt.Output == PromptOutput.Overlay ? CaptureMode.Display : CaptureMode.Replace;
 
-        var target = session.Target!;
-        using var cts = new CancellationTokenSource();
-        _run.Start(cts);
-        var started = Stopwatch.GetTimestamp();
-        string? output = null; // set once the answer is complete; from then on a failure must not lose it
-        _run.HoldEsc();
-        try
-        {
-            if (restoreFocus && !await _desktop.RestoreFocusAsync(target))
-            {
-                _status.ShowError(Loc.Get("err_focus"), session.Anchor);
-                return;
-            }
-
-            // The probe is normally long finished; waiting for it first lets the progress pill sit at the text cursor.
-            var probe = await session.Probe;
-            session = session with { Anchor = _anchors.Refine(session.Anchor, target, probe) };
-            _status.ShowProgress(Loc.Get("working", prompt.Name), session.Anchor);
-
-            var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, ct: cts.Token));
-            if (!captured.Success)
-            {
-                Fail(_status, Describe(captured), session, $"capture failed: {captured.Failure}");
-                return;
-            }
-
-            var capture = captured.Capture!;
-
-            // The runner resolves universal prompts itself (marker or not); the whole captured text is replaced either way.
-            var timings = new LlmTimings();
-            ProviderFallback? fallback = null;
-            output = await _runner.RunAsync(prompt, capture.Text, cts.Token, timings, used =>
-            {
-                fallback = used;
-                OnUi(() => _status.UpdateProgress(Loc.Get("fallback_working", used.From, used.To), session.Anchor));
-            });
-            _lastResult.Remember(output);
-
-            var replaced = await Task.Run(() => _text.ReplaceAsync(capture, output, cts.Token));
-            if (!replaced.Success)
-            {
-                AppLog.Info($"[{target.ProcessName}] replace failed: {replaced.Failure}; the answer ({output.Length} chars) is kept for copying");
-                _lastResult.ShowRescue(Describe(replaced), session.Anchor);
-                return;
-            }
-
-            // Remembered for the undo hotkey: what was there (marker block included) and what was put there. Memory only.
-            History.Add(new ReplacementRecord(capture.Text, output, UndoRun.FieldOf(target)));
-            // The text went to another provider than the prompt names: say so instead of ending silently.
-            if (fallback is not null) _status.ShowInfo(Loc.Get("fallback_done", fallback.From, fallback.To), session.Anchor, longer: true);
-            else _status.HideStatus();
-            var origin = hotkeyTimestamp ?? started;
-            var since = hotkeyTimestamp.HasValue ? "hotkey" : "choice";
-            AppLog.Info($"[{target.ProcessName}] '{prompt.Name}' ({prompt.Mode}) ok via {capture.UsedStrategy}/{capture.Origin}, "
-                + $"{capture.Text.Length} chars -> {output.Length} chars, read {capture.Duration.TotalMilliseconds:F0} ms, "
-                + $"replace {replaced.Duration.TotalMilliseconds:F0} ms, total since {since} {Stopwatch.GetElapsedTime(origin).TotalMilliseconds:F0} ms");
-            LatencyLog.Request(timings, origin, since);
-        }
-        catch (OperationCanceledException)
-        {
-            // Cancelled on purpose (Esc or a click on the pill): no error pill, but a complete answer stays in the tray menu.
-            _status.HideStatus();
-            AppLog.Info(output is null ? "Run cancelled by the user." : "Run cancelled by the user before the paste; the answer is kept for copying.");
-        }
-        catch (Exception ex) when (output is null || ex is MarkerException or LlmException)
-        {
-            FailureMessages.Report(_status, ex, prompt, target, session.Anchor);
-        }
-        catch (Exception ex)
-        {
-            // The answer is complete: the failure must not lose it.
-            AppLog.Error("Run failed.", ex);
-            _lastResult.ShowRescue(FailureMessages.Unexpected(ex), session.Anchor);
-        }
-        finally
-        {
-            _run.ReleaseEsc();
-            _run.Finish();
-        }
-    }
-
-    /// <summary>Runs on the UI thread: directly if already there, otherwise queued (the runner's callbacks do not promise a thread).</summary>
-    private void OnUi(Action action) => _status.RunOnUi(action);
+    private Task ExecuteAsync(RunSession session, PromptDefinition prompt, bool restoreFocus, long? hotkeyTimestamp)
+        => prompt.Output == PromptOutput.Overlay
+            ? _cardRun.ExecuteAsync(session, prompt, restoreFocus, hotkeyTimestamp)
+            : _replaceRun.ExecuteAsync(session, prompt, restoreFocus, hotkeyTimestamp);
 
     // ---- last result ----
 
@@ -442,108 +356,9 @@ public sealed class AppController
         _lastResult.Copy(Anchor.Resolve(null, OverlayPosition.Mouse), showPill: !_run.Busy && !_card.IsLive);
     }
 
-    // ---- result card (overlay output) ----
+    // ---- cancel and temporary hotkeys ----
 
-    private static CaptureMode ModeOf(PromptDefinition prompt)
-        => prompt.Output == PromptOutput.Overlay ? CaptureMode.Display : CaptureMode.Replace;
-
-    /// <summary>
-    /// A run whose result is shown in the card instead of replacing the text. Nothing in the target is changed: no
-    /// paste, no history for undo, no "target changed" check. The text is read without ever selecting anything (no Ctrl+A).
-    /// </summary>
-    private async Task ExecuteOverlayAsync(RunSession session, PromptDefinition prompt, bool restoreFocus, long? hotkeyTimestamp)
-    {
-        var target = session.Target!;
-        using var cts = new CancellationTokenSource();
-        _run.Start(cts);
-        var started = Stopwatch.GetTimestamp();
-        var origin = hotkeyTimestamp ?? started;
-        var since = hotkeyTimestamp.HasValue ? "hotkey" : "choice";
-        _run.HoldEsc(); // until the card takes Esc over
-        try
-        {
-            if (restoreFocus && !await _desktop.RestoreFocusAsync(target))
-            {
-                _status.ShowError(Loc.Get("err_focus"), session.Anchor);
-                return;
-            }
-
-            var probe = await session.Probe;
-            // By default the card has a fixed place on the screen: at the end of the selection it would often be pushed against
-            // the screen edge (the selection can reach beyond the visible page) and cover what is being read.
-            session = session with
-            {
-                Anchor = _anchors.ForResult(target, probe, session.Anchor),
-            };
-            _status.BeginResult(Loc.Get("working", prompt.Name), session.Anchor);
-
-            var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, CaptureMode.Display, cts.Token));
-            if (!captured.Success)
-            {
-                Fail(_status, captured.Failure == CaptureFailure.NoText ? Loc.Get("err_no_selection") : Describe(captured), session,
-                    $"capture failed: {captured.Failure} (overlay output)");
-                return;
-            }
-
-            var capture = captured.Capture!;
-
-            // The text is read: from here on the card owns Esc and the copy hotkey. Registering only now keeps them out of
-            // the way of the keys the app sends itself while reading. Esc passes from the run to the card.
-            _run.ReleaseEsc();
-            _card.Open(session.Anchor, target);
-            if (!_run.IsCurrent(cts)) return; // the foreground window had already changed
-
-            var timings = new LlmTimings();
-            var pieces = 0;
-            void OnFallback(ProviderFallback used) => OnUi(() =>
-            {
-                if (_run.IsCurrent(cts)) _status.UpdateProgress(Loc.Get("fallback_working", used.From, used.To), session.Anchor);
-            });
-
-            await foreach (var piece in _runner.StreamAsync(prompt, capture.Text, cts.Token, timings, OnFallback))
-            {
-                if (!_run.IsCurrent(cts)) return; // the card was closed or replaced: this run is obsolete
-
-                _card.Append(piece);
-                if (pieces++ == 0) _latency.FirstText(target.ProcessName, prompt.Name, origin, since);
-            }
-
-            if (!_run.IsCurrent(cts)) return;
-            var answer = _card.Complete();
-            _lastResult.Remember(answer);
-            _status.EndResult();
-
-            AppLog.Info($"[{target.ProcessName}] '{prompt.Name}' ({prompt.Mode}, overlay) ok via {capture.UsedStrategy}/{capture.Origin}, "
-                + $"{capture.Text.Length} chars -> {answer.Length} chars, read {capture.Duration.TotalMilliseconds:F0} ms, "
-                + $"total since {since} {Stopwatch.GetElapsedTime(origin).TotalMilliseconds:F0} ms");
-            LatencyLog.Request(timings, origin, since);
-        }
-        catch (OperationCanceledException)
-        {
-            // A click on the pill while the text was being read. A card closed by Esc, a new call or another window cancels
-            // through CloseCard, which has already hidden it.
-            if (_run.IsCurrent(cts))
-            {
-                _status.HideStatus();
-                AppLog.Info("Run cancelled by the user.");
-            }
-        }
-        catch (Exception ex)
-        {
-            if (_run.IsCurrent(cts)) FailureMessages.Report(_status, ex, prompt, target, session.Anchor);
-            else AppLog.Info($"[{target.ProcessName}] '{prompt.Name}': obsolete overlay run ended with {ex.GetType().Name}.");
-        }
-        finally
-        {
-            // A card that replaced this run (or closed it) owns the run and the busy flag by now.
-            if (_run.IsCurrent(cts))
-            {
-                _run.ReleaseEsc();
-                _run.Finish();
-            }
-        }
-    }
-
+    /// <summary>A click on the pill: closes a card, or cancels a run that is still reading or waiting.</summary>
     private void OnStatusCancelRequested()
     {
         if (_card.IsLive) _card.Close();
