@@ -66,7 +66,7 @@ public sealed class AppController
     private readonly ClipboardService? _clipboard;
 
     /// <param name="prompts">Read on every use, so a reloaded prompts.toml is picked up without rebuilding anything.</param>
-    /// <param name="hotkeys">Needed for the temporary Esc and copy hotkeys of the result card (overlay output).</param>
+    /// <param name="hotkeys">Needed for the temporary hotkeys: Esc during a run, Esc and copy while the result card is up.</param>
     /// <param name="clipboard">Needed to copy the text of the result card.</param>
     public AppController(
         ITextAccess text, OverlayWindow overlay, StatusWindow status, IPromptRunner runner,
@@ -359,6 +359,7 @@ public sealed class AppController
         using var cts = new CancellationTokenSource();
         _runCts = cts;
         var started = Stopwatch.GetTimestamp();
+        RegisterRunEsc();
         try
         {
             if (restoreFocus && !await WindowHelper.RestoreFocusAsync(target))
@@ -436,6 +437,7 @@ public sealed class AppController
         }
         finally
         {
+            UnregisterRunEsc();
             _runCts = null;
             Busy = false;
         }
@@ -480,6 +482,7 @@ public sealed class AppController
         var started = Stopwatch.GetTimestamp();
         var origin = hotkeyTimestamp ?? started;
         var since = hotkeyTimestamp.HasValue ? "hotkey" : "choice";
+        RegisterRunEsc(); // until the card takes Esc over
         try
         {
             if (restoreFocus && !await WindowHelper.RestoreFocusAsync(target))
@@ -508,7 +511,8 @@ public sealed class AppController
             var capture = captured.Capture!;
 
             // The text is read: from here on the card owns Esc and the copy hotkey. Registering only now keeps them out of
-            // the way of the keys the app sends itself while reading.
+            // the way of the keys the app sends itself while reading. Esc passes from the run to the card.
+            UnregisterRunEsc();
             OpenCard(session.Anchor, target);
             if (!ReferenceEquals(_runCts, cts)) return; // the foreground window had already changed
 
@@ -557,6 +561,7 @@ public sealed class AppController
             // A card that replaced this run (or closed it) owns _runCts and the busy flag by now.
             if (ReferenceEquals(_runCts, cts))
             {
+                UnregisterRunEsc();
                 _runCts = null;
                 Busy = false;
             }
@@ -699,15 +704,51 @@ public sealed class AppController
     }
 
     /// <summary>
-    /// Releases the card's temporary hotkeys. Called before the configured hotkeys are registered anew, so a reload can
-    /// never collide with them (a prompt may have been given the key that copies the card).
+    /// Releases the temporary hotkeys (Esc of a run, Esc and copy of the card). Called before the configured hotkeys are
+    /// registered anew, so a reload can never collide with them (a prompt may have been given the key that copies the card).
     /// </summary>
-    public void ReleaseResultHotkeys() => UnregisterCardHotkeys();
+    public void ReleaseResultHotkeys()
+    {
+        UnregisterCardHotkeys();
+        _runEscReleasedForReload = _runEscHotkeyId != 0;
+        UnregisterRunEsc();
+    }
 
-    /// <summary>Registers the temporary hotkeys again (with the current <see cref="ResultCopyHotkey"/>) if a card is on screen.</summary>
+    /// <summary>Registers the temporary hotkeys again (with the current <see cref="ResultCopyHotkey"/>) if a card or a run held them.</summary>
     public void RestoreResultHotkeys()
     {
         if (_cardLive) RegisterCardHotkeys();
+        if (_runEscReleasedForReload && _runCts is not null && !_cardLive) RegisterRunEsc();
+        _runEscReleasedForReload = false;
+    }
+
+    // ---- Esc during a run ----
+
+    /// <summary>Esc while a run reads the text or waits for the answer, before a card is up. Registered only for that time.</summary>
+    private int _runEscHotkeyId;
+
+    private bool _runEscReleasedForReload;
+
+    private void RegisterRunEsc()
+    {
+        if (_hotkeys is null || _runEscHotkeyId != 0) return;
+        var esc = _hotkeys.Register(new HotkeyGesture(HotkeyModifiers.None, VK_ESCAPE), OnRunEsc, temporary: true);
+        if (esc.Success) _runEscHotkeyId = esc.Id;
+        else AppLog.Warn($"Esc could not be registered for the run: {esc.Error}");
+    }
+
+    private void UnregisterRunEsc()
+    {
+        if (_hotkeys is null || _runEscHotkeyId == 0) return;
+        _hotkeys.Unregister(_runEscHotkeyId);
+        _runEscHotkeyId = 0;
+    }
+
+    /// <summary>The same as a click on the progress pill: once the paste has been sent, a cancel is no longer honoured.</summary>
+    private void OnRunEsc(long hotkeyTimestamp)
+    {
+        AppLog.Info("hotkey: Esc (run)");
+        _runCts?.Cancel();
     }
 
     private const int VK_ESCAPE = 0x1B;
