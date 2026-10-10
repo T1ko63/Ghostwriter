@@ -1,7 +1,8 @@
-# Ghostwriter - example settings.toml
+#:schema ../schemas/settings.schema.json
+# Kuroko - example settings.toml
 #
 # Template with every key and its default value. The app does not read this file.
-# To use it, copy it to %APPDATA%\Ghostwriter\settings.toml and edit it.
+# To use it, copy it to %APPDATA%\Kuroko\settings.toml and edit it.
 # If that file is missing, the app creates one on first start.
 # Changes are applied as soon as the file is saved. If the file has an error, the last working
 # configuration stays active and a message names the file and line.
@@ -15,6 +16,31 @@ undo_hotkey = "Ctrl+Alt+Z"
 # Number of replacements kept in memory, 0-100 (0 = undo off).
 undo_history = 10
 
+# Copies the whole text of the result card (prompts with output = "overlay") and closes the card.
+# Only registered while a card is visible; Esc closes the card (and cancels a request that is still running).
+# Also copies the finished answer while the error pill of a failed paste is shown (tray: "Copy last result" works later too).
+# Plain Ctrl+C, Ctrl+A and Ctrl+V are not allowed: the app sends those keys itself when it reads text.
+result_copy_hotkey = "Ctrl+Alt+C"
+
+# Where the result card appears: fixed (at result_fixed_position on the monitor the target window is on) | follow (where the prompt
+# picker opens, see overlay_position) | caret (at the text cursor, otherwise at the mouse) | mouse (at the mouse).
+# With follow, caret and mouse the card grows down, or up when there is no room below.
+result_position = "fixed"
+# The fixed place: top-third | center | bottom-third (horizontally centered, in the middle of that third), top-left | bottom-left |
+# top-right | bottom-right (corners), left | right (at that edge, vertically centered), top | bottom (at that edge, horizontally centered).
+# The card always grows away from the screen edge it sits at (cards at the top grow down, cards at the bottom grow up, cards in the
+# middle grow in both directions), so it never leaves the screen.
+result_fixed_position = "bottom-third"
+# Distance of the card to the screen edge in pixels, 0-200.
+result_screen_margin = 24
+# Font size of the result card text, 8-32 (decimals such as 14.5 are fine).
+result_font_size = 15
+# Size of the card in pixels (never larger than the monitor). The width is fixed (240-1600). The height follows the text, but is at
+# least result_min_height (0-2000, 0 = as small as the text) and at most result_max_height (120-2000); longer text scrolls.
+result_width = 480
+result_min_height = 0
+result_max_height = 360
+
 # Markers for one-off instructions inside the text, e.g.  <<shorter>> Hello ...
 # Used by prompts with mode = "universal". Must not be empty.
 marker_start = "<<"
@@ -22,7 +48,17 @@ marker_end = ">>"
 
 theme = "system"            # system | light | dark
 accent = "none"             # none | system | hex colour like "#3B82F6" (caret, text selection, progress line)
-overlay_position = "caret"  # caret | mouse | center
+overlay_position = "caret"  # caret | mouse | fixed
+
+# Prompt picker (and the progress pill): a fixed place and size, like the result card. The fixed place (overlay_position = "fixed") is
+# one of top-third | center | bottom-third | top-left | bottom-left | top-right | bottom-right | left | right | top | bottom.
+# The picker grows away from the screen edge it sits at. The margin is the distance to the screen edge in pixels (0-200).
+overlay_fixed_position = "top-third"
+overlay_screen_margin = 8
+overlay_font_size = 14.5      # 8-32; the whole picker scales with it
+overlay_width = 520           # 240-1600, never larger than the monitor
+overlay_min_height = 0        # 0-2000 (0 = as small as the list)
+overlay_max_height = 393      # 120-2000: search line plus eight rows; longer lists scroll
 language = "auto"           # auto | de | en
 autostart = false           # start with Windows
 
@@ -32,12 +68,20 @@ idle_trim_seconds = 90
 # Provider used when a prompt does not name one. Must exist under [providers.*].
 default_provider = "gemini"
 
+# Fallback provider (off when empty). If a provider cannot be reached (no connection, server error 5xx, rate limit 429),
+# the same request goes once to this provider, e.g. "local" for the Ollama model below. Privacy: your text then goes to
+# that provider instead of the one the prompt names. Not used after Esc, for rejected keys or requests (4xx) or timeouts,
+# never more than one step, and never by local providers (their text stays on the PC unless their own block says otherwise).
+# A provider block can override it with its own fallback_provider ("" = no fallback for that provider).
+fallback_provider = ""
+
 
 [appearance]
 transparency = 50           # 0-100 percent: 0 = opaque, 100 = fully transparent
-radius = 10                 # corner radius in px, 0-32
+radius = 10                 # corner radius in px, 0-100
 blur = "acrylic"            # acrylic | blur | mica | micaalt | none
 border = true               # thin border around the window
+custom_corners = false         # true: apply the radius exactly on Acrylic/Mica too (needs the Windhawk mod, corners part); false: Windows snaps to 0, 4 or 8 px
 
 [appearance.dark]
 background = "#000000"      # #RRGGBB or rgb(r, g, b)
@@ -55,12 +99,17 @@ selection  = "#40000000"
 #
 #   type               required: openai | gemini | anthropic | openai-compatible
 #   model              required: model name
-#   api_key_env        name of the environment variable that holds the key (recommended)
+#   api_key_env        name of the environment variable that holds the key
 #   api_key            key written directly in the file (local only, never commit)
+#
+# The key is looked up in this order: api_key, then the variable from api_key_env, then the Windows
+# Credential Manager entry "Kuroko:<name>" (store it via tray icon -> "API keys ..."; no setting needed here).
 #   base_url           optional, defaults per type
 #   timeout_seconds    optional, 1-600 (default 30)
 #   reasoning          optional: off | default | low | medium | high (default off)
 #   max_output_tokens  optional, 0 = automatic (default)
+#   fallback_provider  optional: provider to try once when this one cannot be reached; wins over the global
+#                      fallback_provider, "" = none for this provider (default: the global one)
 
 [providers.gemini]
 type = "gemini"

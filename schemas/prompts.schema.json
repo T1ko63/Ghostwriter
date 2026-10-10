@@ -1,0 +1,60 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kuroko prompts.toml",
+  "description": "Prompts for Kuroko (%APPDATA%\\Kuroko\\prompts.toml). One [[prompt]] block per prompt. Mirrors src/Kuroko.Core/Config/PromptsLoader.cs; the app itself reports errors with file and line.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "prompt": {
+      "type": "array",
+      "description": "One [[prompt]] block per prompt (double brackets).",
+      "items": { "$ref": "#/definitions/prompt" }
+    }
+  },
+  "definitions": {
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "prompt"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Name shown in the overlay. Must be unique (not case-sensitive)."
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The instruction sent to the AI. Must not be empty."
+        },
+        "mode": {
+          "type": "string",
+          "enum": ["transform", "instruction", "universal"],
+          "default": "transform",
+          "description": "transform: edits the selected text, or the whole field. instruction: treats the text in the field as the task. universal: no marker: the text is the task; with a marker: applies it to the rest of the text."
+        },
+        "output": {
+          "type": "string",
+          "enum": ["replace", "overlay"],
+          "default": "replace",
+          "description": "Where the result goes, independent of mode. replace: the result replaces the selected text (or the whole field). overlay: the result is shown in a small card and the text stays as it is; works on read-only text such as web pages."
+        },
+        "hotkey": { "$ref": "#/definitions/hotkey" },
+        "provider": {
+          "type": "string",
+          "description": "Name of a [providers.<name>] block in settings.toml. Empty or missing: default_provider."
+        },
+        "model": {
+          "type": "string",
+          "description": "Overrides the provider's model for this prompt."
+        }
+      }
+    },
+    "hotkey": {
+      "type": "string",
+      "description": "Runs the prompt directly, without the overlay. Modifiers Ctrl (Control, Strg), Alt, Shift (Umschalt), Win (Windows) joined with + and a key: A-Z, 0-9, F1-F24, Space, Enter, Tab, Esc, Backspace, Insert, Delete, Home, End, PageUp, PageDown, Left, Up, Right, Down or one of ; = , - . / ` [ \\ ] '. At least one modifier unless the key is F1-F24. Empty: no hotkey.",
+      "pattern": "^\\s*$|^\\s*([A-Za-z]+\\s*\\+\\s*)*([A-Za-z0-9]+|[;=,\\-./`\\[\\]\\\\'])\\s*$",
+      "examples": ["Ctrl+Alt+K", "Alt+Shift+Z", "F8"]
+    }
+  }
+}

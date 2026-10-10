@@ -5,5 +5,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>true</Deterministic>
     <NoWarn>$(NoWarn);SYSLIB1054</NoWarn>
+    <!-- Keep the build at zero warnings: every new compiler or analyzer warning fails it. -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-minimum</AnalysisLevel>
+    <!-- The one place to bump the version: it is shown in the log at start and under "About Kuroko" in the tray menu. -->
+    <Version>1.0.0</Version>
+    <Product>Kuroko</Product>
+    <Copyright>Copyright (c) 2026 T1ko63</Copyright>
   </PropertyGroup>
 </Project>
