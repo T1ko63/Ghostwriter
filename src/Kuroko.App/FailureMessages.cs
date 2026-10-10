@@ -59,6 +59,13 @@ internal static class FailureMessages
 
     public static string Unexpected(Exception ex) => Loc.Get("err_unexpected", ex.GetType().Name);
 
+    /// <summary>Logs <paramref name="logLine"/> for the session's app and shows <paramref name="message"/> in the error pill.</summary>
+    public static void Fail(IStatusView status, string message, RunSession session, string logLine)
+    {
+        AppLog.Info($"[{session.Target?.ProcessName}] {logLine}");
+        status.ShowError(message, session.Anchor);
+    }
+
     /// <summary>
     /// Logs a failed run and shows it in the error pill, which also replaces a card that is up, so no half answer stays.
     /// Nothing was pasted in any of these cases: the original text is untouched.

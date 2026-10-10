@@ -20,21 +20,20 @@ namespace Kuroko.App;
 /// </summary>
 public sealed class AppController
 {
-    private sealed record Session(TargetInfo? Target, Task<FocusProbe> Probe, Anchor Anchor);
-
     private readonly ITextAccess _text;
     private readonly IOverlayView _overlay;
     private readonly IStatusView _status;
     private readonly IPromptRunner _runner;
     private readonly Func<IReadOnlyList<PromptDefinition>> _prompts;
 
-    private Session? _session;
+    private RunSession? _session;
     private readonly Action? _warmUp;
     private readonly IDesktop _desktop;
     private readonly LastResult _lastResult;
     private readonly RunState _run;
     private readonly ResultCard _card;
     private readonly LatencyLog _latency;
+    private readonly UndoRun _undo;
 
     /// <param name="prompts">Read on every use, so a reloaded prompts.toml is picked up without rebuilding anything.</param>
     /// <param name="hotkeys">Needed for the temporary hotkeys: Esc during a run, Esc and copy while the result card is up.</param>
@@ -56,6 +55,7 @@ public sealed class AppController
         _latency = new LatencyLog(_desktop);
         _card = new ResultCard(status, _desktop, hotkeys, clipboard, _run, () => ResultCopyHotkey);
         _lastResult = new LastResult(status, hotkeys, clipboard, () => ResultCopyHotkey);
+        _undo = new UndoRun(text, status, _run, _anchors, History);
 
         _overlay.PromptChosen += prompt => _ = OnPromptChosenAsync(prompt);
         _overlay.Cancelled += () => _ = CloseOverlayAsync(restoreFocus: true);
@@ -196,13 +196,13 @@ public sealed class AppController
 
         // Start reading the focused element now; the overlay only takes the focus once this is done.
         var probe = _text.ProbeAsync(target!);
-        _ = ShowOverlayAsync(new Session(target, probe, anchor), hotkeyTimestamp);
+        _ = ShowOverlayAsync(new RunSession(target, probe, anchor), hotkeyTimestamp);
     }
 
     /// <summary>How long the overlay may wait for UI Automation to say where the text cursor is (browsers, Electron).</summary>
     private static readonly TimeSpan CaretWaitBudget = TimeSpan.FromMilliseconds(30);
 
-    private async Task ShowOverlayAsync(Session session, long hotkeyTimestamp)
+    private async Task ShowOverlayAsync(RunSession session, long hotkeyTimestamp)
     {
         try
         {
@@ -219,7 +219,7 @@ public sealed class AppController
     /// A failure while the overlay opens must not leave the controller busy: then every hotkey would be ignored
     /// until a restart. Nothing has been read or changed at this point.
     /// </summary>
-    private void AbortOverlay(Session session, Exception ex, bool ownsBusy)
+    private void AbortOverlay(RunSession session, Exception ex, bool ownsBusy)
     {
         AppLog.Error("Opening the overlay failed.", ex);
         if (!ownsBusy) return;
@@ -230,7 +230,7 @@ public sealed class AppController
         _status.ShowError(Loc.Get("err_unexpected", ex.GetType().Name), session.Anchor);
     }
 
-    private async Task ShowOverlayCoreAsync(Session session, long hotkeyTimestamp)
+    private async Task ShowOverlayCoreAsync(RunSession session, long hotkeyTimestamp)
     {
         // Classic Win32 carets are known instantly. Otherwise UIA usually answers within a few milliseconds, which is
         // worth waiting for so the overlay appears at the text cursor instead of at the mouse; if it is slower, the
@@ -275,13 +275,13 @@ public sealed class AppController
         if (Reject(_text.PreCheck(target, null, ModeOf(prompt)), target, anchor)) return;
 
         _run.Busy = true;
-        var session = new Session(target, _text.ProbeAsync(target!), anchor);
+        var session = new RunSession(target, _text.ProbeAsync(target!), anchor);
         _ = ExecuteAsync(session, prompt, restoreFocus: false, hotkeyTimestamp);
     }
 
     // ---- overlay flow ----
 
-    private async Task ActivateAfterProbeAsync(Session session)
+    private async Task ActivateAfterProbeAsync(RunSession session)
     {
         try
         {
@@ -294,7 +294,7 @@ public sealed class AppController
         }
     }
 
-    private async Task ActivateAfterProbeCoreAsync(Session session)
+    private async Task ActivateAfterProbeCoreAsync(RunSession session)
     {
         var probe = await session.Probe;
         if (_session != session || !_overlay.IsShown) return;
@@ -338,7 +338,7 @@ public sealed class AppController
 
     // ---- run ----
 
-    private async Task ExecuteAsync(Session session, PromptDefinition prompt, bool restoreFocus, long? hotkeyTimestamp)
+    private async Task ExecuteAsync(RunSession session, PromptDefinition prompt, bool restoreFocus, long? hotkeyTimestamp)
     {
         if (prompt.Output == PromptOutput.Overlay)
         {
@@ -368,7 +368,7 @@ public sealed class AppController
             var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, ct: cts.Token));
             if (!captured.Success)
             {
-                Fail(Describe(captured), session, $"capture failed: {captured.Failure}");
+                Fail(_status, Describe(captured), session, $"capture failed: {captured.Failure}");
                 return;
             }
 
@@ -393,7 +393,7 @@ public sealed class AppController
             }
 
             // Remembered for the undo hotkey: what was there (marker block included) and what was put there. Memory only.
-            History.Add(new ReplacementRecord(capture.Text, output, FieldOf(target)));
+            History.Add(new ReplacementRecord(capture.Text, output, UndoRun.FieldOf(target)));
             // The text went to another provider than the prompt names: say so instead of ending silently.
             if (fallback is not null) _status.ShowInfo(Loc.Get("fallback_done", fallback.From, fallback.To), session.Anchor, longer: true);
             else _status.HideStatus();
@@ -451,7 +451,7 @@ public sealed class AppController
     /// A run whose result is shown in the card instead of replacing the text. Nothing in the target is changed: no
     /// paste, no history for undo, no "target changed" check. The text is read without ever selecting anything (no Ctrl+A).
     /// </summary>
-    private async Task ExecuteOverlayAsync(Session session, PromptDefinition prompt, bool restoreFocus, long? hotkeyTimestamp)
+    private async Task ExecuteOverlayAsync(RunSession session, PromptDefinition prompt, bool restoreFocus, long? hotkeyTimestamp)
     {
         var target = session.Target!;
         using var cts = new CancellationTokenSource();
@@ -480,7 +480,7 @@ public sealed class AppController
             var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, CaptureMode.Display, cts.Token));
             if (!captured.Success)
             {
-                Fail(captured.Failure == CaptureFailure.NoText ? Loc.Get("err_no_selection") : Describe(captured), session,
+                Fail(_status, captured.Failure == CaptureFailure.NoText ? Loc.Get("err_no_selection") : Describe(captured), session,
                     $"capture failed: {captured.Failure} (overlay output)");
                 return;
             }
@@ -574,8 +574,6 @@ public sealed class AppController
     /// <summary>The last replacements, in memory only. Capacity follows undo_history.</summary>
     public ReplacementHistory History { get; } = new();
 
-    private static FieldId FieldOf(TargetInfo target) => new(target.Window, target.ProcessId, target.FocusWindow);
-
     /// <summary>Global undo hotkey: puts the original text back, but only where the stored result is still found.</summary>
     public void OnUndoHotkey(long hotkeyTimestamp)
     {
@@ -598,70 +596,7 @@ public sealed class AppController
         }
 
         _run.Busy = true;
-        _ = UndoAsync(new Session(target, _text.ProbeAsync(target!), anchor));
-    }
-
-    private async Task UndoAsync(Session session)
-    {
-        var target = session.Target!;
-        using var cts = new CancellationTokenSource();
-        _run.Start(cts);
-        try
-        {
-            var probe = await session.Probe;
-            session = session with { Anchor = _anchors.Refine(session.Anchor, target, probe) };
-
-            // Read what is in the field right now (selection, otherwise the whole field), exactly as for a normal run.
-            var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, ct: cts.Token));
-            if (!captured.Success)
-            {
-                // An empty field cannot contain the stored result.
-                Fail(captured.Failure == CaptureFailure.NoText ? Loc.Get("undo_changed") : Describe(captured), session,
-                    $"undo: capture failed: {captured.Failure}");
-                return;
-            }
-
-            var capture = captured.Capture!;
-            var plan = History.Plan(FieldOf(target), capture.Text);
-            if (plan.Outcome != UndoOutcome.Restore)
-            {
-                var message = plan.Outcome switch
-                {
-                    UndoOutcome.NothingToUndo => Loc.Get("undo_nothing"),
-                    UndoOutcome.OtherField => Loc.Get("undo_other_field"),
-                    UndoOutcome.Ambiguous => Loc.Get("undo_ambiguous"),
-                    _ => Loc.Get("undo_changed"),
-                };
-                AppLog.Info($"[{target.ProcessName}] undo refused: {plan.Outcome}");
-                _status.ShowInfo(message, session.Anchor);
-                return;
-            }
-
-            var replaced = await Task.Run(() => _text.ReplaceAsync(capture, plan.NewText!, cts.Token));
-            if (!replaced.Success)
-            {
-                Fail(Describe(replaced), session, $"undo: replace failed: {replaced.Failure}");
-                return;
-            }
-
-            History.Commit(plan.Record!);
-            _status.ShowInfo(Loc.Get("undo_done"), session.Anchor);
-            AppLog.Info($"[{target.ProcessName}] undo ok via {capture.UsedStrategy}/{capture.Origin}, {capture.Text.Length} -> {plan.NewText!.Length} chars, "
-                + $"{History.Count} left in history");
-        }
-        catch (OperationCanceledException)
-        {
-            _status.HideStatus();
-        }
-        catch (Exception ex)
-        {
-            AppLog.Error("Undo failed.", ex);
-            _status.ShowError(Loc.Get("err_unexpected", ex.GetType().Name), session.Anchor);
-        }
-        finally
-        {
-            _run.Finish();
-        }
+        _ = _undo.ExecuteAsync(new RunSession(target, _text.ProbeAsync(target!), anchor));
     }
 
     // ---- helpers ----
@@ -672,11 +607,5 @@ public sealed class AppController
         AppLog.Info($"[{target?.ProcessName ?? "?"}] rejected: {failure.Failure}");
         _status.ShowError(Describe(failure), anchor);
         return true;
-    }
-
-    private void Fail(string message, Session session, string logLine)
-    {
-        AppLog.Info($"[{session.Target?.ProcessName}] {logLine}");
-        _status.ShowError(message, session.Anchor);
     }
 }
