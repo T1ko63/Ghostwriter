@@ -45,7 +45,47 @@ Store API keys in the Windows Credential Manager from the tray menu instead of k
 3. Add an API key via the tray icon → **API keys …** (**API-Schlüssel …** in the German UI). It is stored as `Kuroko:<provider>` (for example `Kuroko:gemini`) in the Windows Credential Manager. Alternatively, set `api_key_env` or `api_key` in the provider block of `settings.toml`.
 4. Select text in any app, or just type, and press `Ctrl+Shift+Space` to pick a prompt.
 
-The full guide (in German) is in [`docs/README.md`](docs/README.md).
+## Usage
+
+| Action | Default hotkey |
+|---|---|
+| Open the overlay (search and pick a prompt) | `Ctrl+Shift+Space` |
+| Run the Universal prompt directly (write **and** edit) | `Ctrl+Alt+M` |
+| Run another prompt directly | per prompt in `prompts.toml`, e.g. `Ctrl+Alt+K` for Correction |
+| Undo the last replacement | `Ctrl+Alt+Z` |
+| Close the result card (cancels a running request) | `Esc`, only while a card is visible |
+| Copy the result card and close it | `Ctrl+Alt+C`, only while a card is visible |
+
+Kuroko works on the selected text, or on the whole field if nothing is selected. The Universal prompt decides from the text:
+without a marker, the text is a task (“decline Friday’s game night”) and the answer replaces it; with a marker such as
+`<<shorter and friendlier>>`, the marker’s instruction is applied to the rest of the text. Prompts with
+`output = "overlay"` show the answer in a small card and leave the text untouched, which also works on read-only pages.
+
+The field is only changed once the complete answer has arrived. Password fields, terminals, administrator windows and
+texts over 50,000 characters are not supported.
+
+## Privacy
+
+* **No telemetry**, no usage statistics, no update check, no account. Kuroko only talks to the providers in `settings.toml`.
+* **When you run a prompt**, the prompt’s instruction and the captured text (selection or field, up to 50,000 characters)
+  go to that prompt’s provider, together with the model and output settings. No window titles, app names or other
+  clipboard content. OpenAI requests are sent with `store = false`; Gemini requests always enable Google Search
+  grounding. With a local OpenAI-compatible server (Ollama, LM Studio) the text never leaves your PC.
+* **Without a prompt**, Kuroko sends one `HEAD` request to the default provider’s `base_url` at start, after a config
+  change and when the overlay opens, so the connection is ready. It carries no text and no key.
+* **API keys** travel only in the request header, never in the URL, and never over plain `http://` to a remote host.
+  They are masked in error messages and never logged.
+* **Stored on disk:** `settings.toml`, `prompts.toml` and `kuroko.log` in `%APPDATA%\Kuroko`. The log holds timings,
+  text lengths, the target program’s name and prompt names, never your text, results or keys. Undo history and the
+  saved clipboard stay in memory only; what Kuroko puts on the clipboard is kept out of clipboard history and cloud sync.
+
+Details are in the German guide under [Datenschutz](docs/README.md#datenschutz).
+
+## Documentation
+
+* [`docs/README.md`](docs/README.md): the full guide in German (all settings, result card, undo, appearance, troubleshooting, measurements).
+* [`config/`](config): commented templates of `settings.toml` and `prompts.toml` with every key.
+* [`docs/refactoring-report.md`](docs/refactoring-report.md): code audit from October 2026 (German, written when Kuroko was still called Ghostwriter).
 
 ## Disclaimer and license
 

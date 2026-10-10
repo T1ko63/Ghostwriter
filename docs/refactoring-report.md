@@ -1,4 +1,8 @@
-# Refactoring- und Qualitäts-Audit – Ghostwriter
+# Refactoring- und Qualitäts-Audit – Kuroko (damals Ghostwriter)
+
+> Historischer Bericht vom 2026-10-08. Kuroko hieß zu diesem Zeitpunkt noch Ghostwriter; Projektnamen, Pfade und
+> Log-Dateien (`Ghostwriter.Core`, `%APPDATA%\Ghostwriter\ghostwriter.log`, …) sind im Text unverändert geblieben.
+> Heute heißen sie `Kuroko.*`, `%APPDATA%\Kuroko\` und `kuroko.log`. Die Anleitung steht in [`README.md`](README.md).
 
 Stand: 2026-10-08, Branch `refactor/stabilize` (abgezweigt von `main` @ `5a16c42`).
 Phase 0 (Baseline) und Phase 1 (Analyse) sind abgeschlossen. **Es wurde noch kein Code geändert.**

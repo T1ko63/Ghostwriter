@@ -5,6 +5,9 @@ Prompt wählen, das Ergebnis ersetzt den Text direkt im Feld. Kein Fensterwechse
 
 Die App lebt im Tray, hat kein Hauptfenster und wird über zwei TOML-Dateien konfiguriert.
 
+Dies ist die vollständige Anleitung. Eine englische Kurzfassung steht in der [Root-README](../README.md), der
+Audit-Bericht vom Oktober 2026 in [`refactoring-report.md`](refactoring-report.md).
+
 ## Bedienung
 
 | Aktion | Standard-Hotkey |
@@ -88,7 +91,7 @@ Themes stehen im Block `[appearance]` der `settings.toml` (siehe unten); alle Ne
 Hover) werden aus der Textfarbe abgeleitet. `accent` färbt nur noch Textcursor, Textmarkierung und Fortschrittslinie, die Auswahlzeile
 bestimmt `selection`. Maße, Schriftgrößen und Abstände stehen weiter an einer Stelle: `src\Kuroko.App\Themes\Design.xaml`.
 
-**Tray-Menü:** Config-Ordner öffnen · Config neu laden · Mit Windows starten · Beenden.
+**Tray-Menü:** Config-Ordner öffnen · Config neu laden · API-Schlüssel … · Mit Windows starten · Beenden.
 
 ## Konfiguration
 
@@ -205,8 +208,7 @@ selection  = "#40000000"
 
 Anbieter: `openai` (Responses API), `gemini`, `anthropic` (Messages API) und `openai-compatible` für lokale Server
 wie Ollama oder LM Studio (`base_url = "http://localhost:11434/v1"`). Modellnamen stehen nur in dieser Datei.
-Ein API-Schlüssel wird nie über unverschlüsseltes `http://` an fremde Hosts gesendet, nie geloggt und nur an den
-gewählten Anbieter geschickt. Keine Telemetrie.
+Was dabei an den Anbieter geht, steht unter [Datenschutz](#datenschutz).
 
 ### prompts.toml
 
@@ -227,6 +229,48 @@ Gib ausschließlich den korrigierten Text aus.
 Alle Hotkeys (`overlay_hotkey`, `undo_hotkey`, `result_copy_hotkey` und die der Prompts) teilen sich einen Namensraum: Jeder darf nur einmal
 vorkommen, sonst meldet die App den Fehler mit Datei und Zeile. Ein Beispiel für einen Overlay-Prompt steht in `config/prompts.example.toml`.
 
+## Datenschutz
+
+Kuroko hat keine Telemetrie, keine Nutzungsstatistik, keine Update-Prüfung und kein Konto. Netzwerkverkehr gibt es nur
+zum Anbieter, der in `settings.toml` steht.
+
+**Was an den Anbieter geht, wenn du einen Prompt ausführst:** die Anweisung des Prompts und der erfasste Text (die
+Auswahl oder der Feldinhalt, höchstens 50.000 Zeichen), dazu Modell, Ausgabegrenze und gegebenenfalls die Reasoning-Einstellung. Sonst nichts: kein Fenstertitel,
+kein App-Name, kein sonstiger Inhalt der Zwischenablage. Ziel ist die `base_url` des Anbieters, den der Prompt verwendet.
+Was der Anbieter mit dem Text macht und wie lange er ihn aufbewahrt, regeln dessen eigene Bedingungen. Je Anbieter:
+
+* `openai`: Die Anfrage geht mit `store = false`, die Antwort wird also nicht im Antwortverlauf des Kontos gespeichert.
+* `gemini`: Die Anfrage aktiviert immer die Google-Suche (Grounding); Google kann aus dem Text Suchanfragen bilden.
+* `anthropic`: keine Besonderheiten.
+* `openai-compatible` mit einem lokalen Server (Ollama, LM Studio): Der Text verlässt den Rechner nicht.
+
+**Netzaufruf ohne Prompt:** Beim Start, nach einer Config-Änderung und beim Öffnen des Overlays schickt Kuroko ein
+`HEAD` an die `base_url` des Standard-Anbieters, damit die Verbindung beim eigentlichen Aufruf schon steht. Es enthält
+weder Text noch Schlüssel, nur die Kennung `Kuroko/1.0`.
+
+**API-Schlüssel:** Der Schlüssel geht nur im HTTP-Header an den gewählten Anbieter (`Authorization`, `x-api-key` bzw.
+`x-goog-api-key`), nie in der URL. Über `http://` an einen entfernten Host wird er nicht gesendet; eine solche `base_url`
+lehnt die Config ab (erlaubt sind `localhost`, Rechnernamen ohne Punkt, `.local` und private IP-Adressen). In
+Fehlermeldungen wird er durch `***` ersetzt, ins Log kommt er nie. Gespeichert ist er dort, wo du ihn ablegst (siehe
+[API-Schlüssel](#api-schlüssel)): in der Windows-Anmeldeinformationsverwaltung (nur dein Benutzerkonto, nur dieser
+Rechner), in einer Umgebungsvariable oder im Klartext in `settings.toml`.
+
+**Was lokal gespeichert wird:**
+
+| Was | Wo | Inhalt |
+|---|---|---|
+| `settings.toml`, `prompts.toml` | `%APPDATA%\Kuroko\` (oder `KUROKO_CONFIG_DIR`) | deine Einstellungen und Prompts |
+| `kuroko.log` | im selben Ordner, beginnt über 1 MB neu | Zeiten, Textlängen, Name des Zielprogramms (z. B. `notepad`), Prompt-Namen, Hotkeys, Config-Meldungen, Fehlerart und Fehlertext des Anbieters (bei abgelehnten Anfragen nicht, weil er Teile deines Texts zitieren kann); nie Texte, Antworten oder Schlüssel |
+| API-Schlüssel | Windows-Anmeldeinformationsverwaltung `Kuroko:<anbieter>` | nur wenn du ihn dort speicherst |
+| Autostart | Registry, `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Pfad zu `Kuroko.exe`, nur wenn „Mit Windows starten“ an ist |
+
+**Nur im Arbeitsspeicher, beim Beenden weg:** die Rückgängig-Liste (Original und Ergebnis der letzten `undo_history`
+Ersetzungen) und die gesicherte Zwischenablage während einer Ersetzung. Was Kuroko selbst kurz in die Zwischenablage legt
+(Erkennungstext beim Kopieren, Ergebnis beim Einfügen), ist für den Windows-Zwischenablageverlauf und die Cloud-Synchronisierung
+gesperrt. Nur `Ctrl+Alt+C` in der Ergebnis-Karte legt den Text wie ein normales Kopieren ab.
+
+**Bewusst ausgelassen:** Passwortfelder, Terminals und Fenster mit Administratorrechten liest Kuroko nicht.
+
 ## Bauen, testen, ausführen
 
 Voraussetzung: .NET 10 SDK (Windows).
@@ -235,7 +279,7 @@ Voraussetzung: .NET 10 SDK (Windows).
 dotnet build                       # Debug
 dotnet test                        # Unit-Tests (Marker, Config, Provider mit simuliertem Server, ...)
 powershell -File tools\publish.ps1 # Release mit ReadyToRun nach publish\Kuroko
-powershell -File tools\publish.ps1 -SelfContained   # läuft ohne installierte .NET-Runtime (~130 MB)
+powershell -File tools\publish.ps1 -SelfContained   # läuft ohne installierte .NET-Runtime (~150 MB)
 ```
 
 Das Icon wird mit `tools\make-icon.ps1` erzeugt.
@@ -266,7 +310,7 @@ Während die Antwort noch läuft, wird der Kopier-Hotkey ignoriert (kein halbes 
 
 ## Fehlersuche
 
-* **Log:** `kuroko.log` im Config-Ordner (enthält nur Längen und Zeiten, nie Texte oder Schlüssel).
+* **Log:** `kuroko.log` im Config-Ordner (Inhalt siehe [Datenschutz](#datenschutz); nie Texte oder Schlüssel).
 * **Hotkey reagiert nicht:** Wenn eine andere App ihn belegt, meldet Kuroko das beim Start/Neuladen. Anderen Hotkey wählen.
 * **„API-Schlüssel fehlt":** Schlüssel über Tray-Symbol → „API-Schlüssel …“ speichern, oder `api_key` bzw.
   `api_key_env` im Provider-Block setzen; Umgebungsvariablen werden beim Start gelesen (nach dem Setzen der Variable
@@ -287,7 +331,8 @@ Während die Antwort noch läuft, wird der Kopier-Hotkey ignoriert (kein halbes 
 | | |
 |---|---|
 | Hotkey → Overlay (erster WPF-Frame, warm; ohne DWM-Komposition) | Median 2–3 ms, p95 4 ms; erster nach dem Start ca. 9 ms (mit dem neuen Look unverändert) |
-| Hotkey/Auswahl → Request verlässt die App | Median 5 ms (erster nach dem Start 32 ms) |
+| Hotkey → Overlay im Alltag (aus dem Log, mit Blur) | 7–10 ms (Explorer), 16 ms (VSCodium) |
+| Hotkey/Auswahl → Request verlässt die App | Median 5 ms (erster nach dem Start 32 ms); im Alltag 5–27 ms |
 | Hotkey → Ergebnis eingefügt (Korrektur, kurzer Text) | Median 0,6 s, p95 0,9 s (davon fast alles Antwortzeit des Modells) |
-| Start bis bereit | ca. 0,47 s (davon ca. 0,3 s das Erzeugen der WPF-Fenster) |
+| Start bis bereit | Median ca. 0,38 s im Prozess, ca. 0,54 s ab Prozessstart (davon ca. 0,3 s Fenster erzeugen und Overlay vorwärmen) |
 | Speicher | aktiv ca. 150–190 MB privat; nach 90 s Ruhe ca. 20 MB Working Set |
