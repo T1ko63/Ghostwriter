@@ -29,24 +29,12 @@ public sealed class AppController
     private readonly Func<IReadOnlyList<PromptDefinition>> _prompts;
 
     private Session? _session;
-    private CancellationTokenSource? _runCts;
-    private bool _busy;
-
-    /// <summary>Set while the overlay is up or a run is active; the 1 ms timer resolution is only held for that time.</summary>
-    private bool Busy
-    {
-        set
-        {
-            _busy = value;
-            _desktop.SetHighResolutionTimer(value);
-        }
-    }
-
     private readonly Action? _warmUp;
     private readonly IHotkeyRegistry? _hotkeys;
     private readonly IDesktop _desktop;
     private readonly IClipboard? _clipboard;
     private readonly LastResult _lastResult;
+    private readonly RunState _run;
 
     /// <param name="prompts">Read on every use, so a reloaded prompts.toml is picked up without rebuilding anything.</param>
     /// <param name="hotkeys">Needed for the temporary hotkeys: Esc during a run, Esc and copy while the result card is up.</param>
@@ -66,7 +54,7 @@ public sealed class AppController
         _hotkeys = hotkeys;
         _clipboard = clipboard;
         _desktop = desktop ?? new Win32Desktop();
-        _runEsc = new TemporaryHotkey(hotkeys, "Esc could not be registered for the run");
+        _run = new RunState(_desktop, hotkeys);
         _cardEsc = new TemporaryHotkey(hotkeys, "Esc could not be registered for the result card");
         _cardCopy = new TemporaryHotkey(hotkeys, "The copy hotkey could not be registered for the result card");
         _lastResult = new LastResult(status, hotkeys, clipboard, () => ResultCopyHotkey);
@@ -143,7 +131,7 @@ public sealed class AppController
     /// <summary>Environment.TickCount64 of the last hotkey or run; used to find out when the app has been idle for a while.</summary>
     public long LastActivityTick { get; private set; } = Environment.TickCount64;
 
-    public bool IsBusy => _busy || _overlay.IsShown || _cardLive;
+    public bool IsBusy => _run.Busy || _overlay.IsShown || _cardLive;
 
     /// <summary>Raised on every hotkey, after <see cref="LastActivityTick"/> was updated.</summary>
     public event Action? Activity;
@@ -162,7 +150,7 @@ public sealed class AppController
     /// </summary>
     public void ShowNotice(string message, NoticeKind kind = NoticeKind.Error)
     {
-        if (_busy || _cardLive)
+        if (_run.Busy || _cardLive)
         {
             AppLog.Info("Notice skipped: a run is active or a result is on screen.");
             return; // never cover the progress of a running prompt, or a result the user is reading
@@ -196,7 +184,7 @@ public sealed class AppController
             return;
         }
 
-        if (_busy)
+        if (_run.Busy)
         {
             AppLog.Info("Overlay hotkey ignored: a run is active.");
             return;
@@ -207,7 +195,7 @@ public sealed class AppController
         var anchor = _anchors.ForTarget(target);
         if (Reject(_text.PreCheck(target, null, CaptureMode.Display), target, anchor)) return;
 
-        Busy = true;
+        _run.Busy = true;
 
         // Start reading the focused element now; the overlay only takes the focus once this is done.
         var probe = _text.ProbeAsync(target!);
@@ -241,7 +229,7 @@ public sealed class AppController
 
         _session = null;
         _overlay.HideOverlay();
-        Busy = false;
+        _run.Busy = false;
         _status.ShowError(Loc.Get("err_unexpected", ex.GetType().Name), session.Anchor);
     }
 
@@ -279,7 +267,7 @@ public sealed class AppController
         MarkActivity();
         AppLog.Info($"hotkey: prompt '{prompt.Name}'");
         CloseCard(); // a visible result card never blocks the next call; its temporary hotkeys are released before anything is read
-        if (_busy || _overlay.IsShown)
+        if (_run.Busy || _overlay.IsShown)
         {
             AppLog.Info($"Prompt hotkey '{prompt.Name}' ignored: busy.");
             return;
@@ -289,7 +277,7 @@ public sealed class AppController
         var anchor = _anchors.ForTarget(target);
         if (Reject(_text.PreCheck(target, null, ModeOf(prompt)), target, anchor)) return;
 
-        Busy = true;
+        _run.Busy = true;
         var session = new Session(target, _text.ProbeAsync(target!), anchor);
         _ = ExecuteAsync(session, prompt, restoreFocus: false, hotkeyTimestamp);
     }
@@ -320,7 +308,7 @@ public sealed class AppController
         {
             _overlay.HideOverlay();
             _session = null;
-            Busy = false;
+            _run.Busy = false;
             return;
         }
 
@@ -347,7 +335,7 @@ public sealed class AppController
         }
         finally
         {
-            Busy = false;
+            _run.Busy = false;
         }
     }
 
@@ -363,10 +351,10 @@ public sealed class AppController
 
         var target = session.Target!;
         using var cts = new CancellationTokenSource();
-        _runCts = cts;
+        _run.Start(cts);
         var started = Stopwatch.GetTimestamp();
         string? output = null; // set once the answer is complete; from then on a failure must not lose it
-        RegisterRunEsc();
+        _run.HoldEsc();
         try
         {
             if (restoreFocus && !await _desktop.RestoreFocusAsync(target))
@@ -443,9 +431,8 @@ public sealed class AppController
         }
         finally
         {
-            UnregisterRunEsc();
-            _runCts = null;
-            Busy = false;
+            _run.ReleaseEsc();
+            _run.Finish();
         }
     }
 
@@ -461,7 +448,7 @@ public sealed class AppController
     public void CopyLastResult()
     {
         AppLog.Info("tray: copy last result");
-        _lastResult.Copy(Anchor.Resolve(null, OverlayPosition.Mouse), showPill: !_busy && !_cardLive);
+        _lastResult.Copy(Anchor.Resolve(null, OverlayPosition.Mouse), showPill: !_run.Busy && !_cardLive);
     }
 
     // ---- result card (overlay output) ----
@@ -490,11 +477,11 @@ public sealed class AppController
     {
         var target = session.Target!;
         using var cts = new CancellationTokenSource();
-        _runCts = cts;
+        _run.Start(cts);
         var started = Stopwatch.GetTimestamp();
         var origin = hotkeyTimestamp ?? started;
         var since = hotkeyTimestamp.HasValue ? "hotkey" : "choice";
-        RegisterRunEsc(); // until the card takes Esc over
+        _run.HoldEsc(); // until the card takes Esc over
         try
         {
             if (restoreFocus && !await _desktop.RestoreFocusAsync(target))
@@ -524,27 +511,27 @@ public sealed class AppController
 
             // The text is read: from here on the card owns Esc and the copy hotkey. Registering only now keeps them out of
             // the way of the keys the app sends itself while reading. Esc passes from the run to the card.
-            UnregisterRunEsc();
+            _run.ReleaseEsc();
             OpenCard(session.Anchor, target);
-            if (!ReferenceEquals(_runCts, cts)) return; // the foreground window had already changed
+            if (!_run.IsCurrent(cts)) return; // the foreground window had already changed
 
             var timings = new LlmTimings();
             var pieces = 0;
             void OnFallback(ProviderFallback used) => OnUi(() =>
             {
-                if (ReferenceEquals(_runCts, cts)) _status.UpdateProgress(Loc.Get("fallback_working", used.From, used.To), session.Anchor);
+                if (_run.IsCurrent(cts)) _status.UpdateProgress(Loc.Get("fallback_working", used.From, used.To), session.Anchor);
             });
 
             await foreach (var piece in _runner.StreamAsync(prompt, capture.Text, cts.Token, timings, OnFallback))
             {
-                if (!ReferenceEquals(_runCts, cts)) return; // the card was closed or replaced: this run is obsolete
+                if (!_run.IsCurrent(cts)) return; // the card was closed or replaced: this run is obsolete
 
                 _cardText.Append(piece);
                 _status.AppendResult(piece);
                 if (pieces++ == 0) LogFirstText(target.ProcessName, prompt.Name, origin, since);
             }
 
-            if (!ReferenceEquals(_runCts, cts)) return;
+            if (!_run.IsCurrent(cts)) return;
             _cardComplete = true;
             _lastResult.Remember(_cardText.ToString());
             _status.EndResult();
@@ -563,7 +550,7 @@ public sealed class AppController
         {
             // A click on the pill while the text was being read. A card closed by Esc, a new call or another window cancels
             // through CloseCard, which has already hidden it.
-            if (ReferenceEquals(_runCts, cts))
+            if (_run.IsCurrent(cts))
             {
                 _status.HideStatus();
                 AppLog.Info("Run cancelled by the user.");
@@ -571,17 +558,16 @@ public sealed class AppController
         }
         catch (Exception ex)
         {
-            if (ReferenceEquals(_runCts, cts)) FailureMessages.Report(_status, ex, prompt, target, session.Anchor);
+            if (_run.IsCurrent(cts)) FailureMessages.Report(_status, ex, prompt, target, session.Anchor);
             else AppLog.Info($"[{target.ProcessName}] '{prompt.Name}': obsolete overlay run ended with {ex.GetType().Name}.");
         }
         finally
         {
-            // A card that replaced this run (or closed it) owns _runCts and the busy flag by now.
-            if (ReferenceEquals(_runCts, cts))
+            // A card that replaced this run (or closed it) owns the run and the busy flag by now.
+            if (_run.IsCurrent(cts))
             {
-                UnregisterRunEsc();
-                _runCts = null;
-                Busy = false;
+                _run.ReleaseEsc();
+                _run.Finish();
             }
         }
     }
@@ -608,12 +594,11 @@ public sealed class AppController
     {
         if (!_cardLive) return;
 
-        var run = _runCts;
-        _runCts = null; // the run notices that it is obsolete and stays out of the way of whatever comes next
+        var run = _run.Detach();
         if (run is not null)
         {
             run.Cancel();
-            Busy = false;
+            _run.Busy = false;
         }
 
         AppLog.Info(run is null ? "Result card closed." : "Result card closed while the answer was streaming: request cancelled.");
@@ -636,7 +621,7 @@ public sealed class AppController
     private void OnStatusCancelRequested()
     {
         if (_cardLive) CloseCard();
-        else _runCts?.Cancel();
+        else _run.Cancel();
     }
 
     private void OnForegroundChanged()
@@ -696,8 +681,7 @@ public sealed class AppController
     public void ReleaseResultHotkeys()
     {
         UnregisterCardHotkeys();
-        _runEscReleasedForReload = _runEsc.IsHeld;
-        UnregisterRunEsc();
+        _run.ReleaseForReload();
         _lastResult.ReleaseForReload();
     }
 
@@ -705,30 +689,8 @@ public sealed class AppController
     public void RestoreResultHotkeys()
     {
         if (_cardLive) RegisterCardHotkeys();
-        if (_runEscReleasedForReload && _runCts is not null && !_cardLive) RegisterRunEsc();
-        _runEscReleasedForReload = false;
+        _run.RestoreAfterReload(_cardLive);
         _lastResult.RestoreAfterReload();
-    }
-
-    // ---- Esc during a run ----
-
-    /// <summary>Esc while a run reads the text or waits for the answer, before a card is up. Registered only for that time.</summary>
-    private readonly TemporaryHotkey _runEsc;
-
-    private bool _runEscReleasedForReload;
-
-    private void RegisterRunEsc()
-    {
-        if (!_runEsc.IsHeld) _runEsc.Register(TemporaryHotkey.Escape, OnRunEsc);
-    }
-
-    private void UnregisterRunEsc() => _runEsc.Release();
-
-    /// <summary>The same as a click on the progress pill: once the paste has been sent, a cancel is no longer honoured.</summary>
-    private void OnRunEsc(long hotkeyTimestamp)
-    {
-        AppLog.Info("hotkey: Esc (run)");
-        _runCts?.Cancel();
     }
 
     /// <summary>Logs the time from hotkey/choice to the first text of the card, once layout is done and once the frame is rendered.</summary>
@@ -752,7 +714,7 @@ public sealed class AppController
         MarkActivity();
         AppLog.Info("hotkey: undo");
         CloseCard();
-        if (_busy || _overlay.IsShown)
+        if (_run.Busy || _overlay.IsShown)
         {
             AppLog.Info("Undo hotkey ignored: busy.");
             return;
@@ -767,7 +729,7 @@ public sealed class AppController
             return;
         }
 
-        Busy = true;
+        _run.Busy = true;
         _ = UndoAsync(new Session(target, _text.ProbeAsync(target!), anchor));
     }
 
@@ -775,7 +737,7 @@ public sealed class AppController
     {
         var target = session.Target!;
         using var cts = new CancellationTokenSource();
-        _runCts = cts;
+        _run.Start(cts);
         try
         {
             var probe = await session.Probe;
@@ -830,8 +792,7 @@ public sealed class AppController
         }
         finally
         {
-            _runCts = null;
-            Busy = false;
+            _run.Finish();
         }
     }
 
