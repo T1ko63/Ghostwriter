@@ -78,22 +78,30 @@ public sealed class AppController
         _status.ActionEnded += _rescueCopy.Release;
     }
 
-    public OverlayPosition Position { get; set; } = OverlayPosition.Caret;
+    private readonly AnchorPolicy _anchors = new();
+
+    public OverlayPosition Position
+    {
+        get => _anchors.Position;
+        set => _anchors.Position = value;
+    }
 
     /// <summary>overlay_fixed_position and overlay_screen_margin: used when <see cref="Position"/> is <see cref="OverlayPosition.Fixed"/>, and for the margin in every mode.</summary>
-    public CardSpot OverlaySpot { get; set; } = CardSpot.TopThird;
+    public CardSpot OverlaySpot
+    {
+        get => _anchors.OverlaySpot;
+        set => _anchors.OverlaySpot = value;
+    }
 
-    public double OverlayScreenMargin { get; set; } = AppSettings.DefaultOverlayScreenMargin;
+    public double OverlayScreenMargin
+    {
+        get => _anchors.OverlayScreenMargin;
+        set => _anchors.OverlayScreenMargin = value;
+    }
 
     /// <summary>Size and font of the prompt picker (overlay_width, overlay_min_height, overlay_max_height, overlay_font_size); applied at once.</summary>
     public void SetOverlayLayout(double width, double minHeight, double maxHeight, double fontSize)
         => _overlay.SetLayout(width, minHeight, maxHeight, fontSize);
-
-    /// <summary>Where the overlay and the pills go for the current target: a fixed place, or at the text cursor / mouse.</summary>
-    private Anchor MakeAnchor(TargetInfo? target)
-        => Position == OverlayPosition.Fixed
-            ? Anchor.ResolveSpot(target, OverlaySpot, OverlayScreenMargin)
-            : Anchor.Resolve(target, Position) with { MarginDip = OverlayScreenMargin };
 
     /// <summary>
     /// Hotkey that copies the result card, or the answer offered by the error pill after a failed paste (result_copy_hotkey);
@@ -102,13 +110,25 @@ public sealed class AppController
     public string ResultCopyHotkey { get; set; } = AppSettings.DefaultResultCopyHotkey;
 
     /// <summary>result_position: where the card opens.</summary>
-    public ResultPlacement ResultPlacement { get; set; } = ResultPlacement.Fixed;
+    public ResultPlacement ResultPlacement
+    {
+        get => _anchors.ResultPlacement;
+        set => _anchors.ResultPlacement = value;
+    }
 
     /// <summary>result_fixed_position.</summary>
-    public CardSpot ResultSpot { get; set; } = CardSpot.BottomThird;
+    public CardSpot ResultSpot
+    {
+        get => _anchors.ResultSpot;
+        set => _anchors.ResultSpot = value;
+    }
 
     /// <summary>result_screen_margin: distance of the card to the screen edge, in device-independent pixels.</summary>
-    public double ResultScreenMargin { get; set; } = AppSettings.DefaultResultScreenMargin;
+    public double ResultScreenMargin
+    {
+        get => _anchors.ResultScreenMargin;
+        set => _anchors.ResultScreenMargin = value;
+    }
 
     /// <summary>result_font_size: applied at once, also to a card that is on screen.</summary>
     public double ResultFontSize
@@ -184,7 +204,7 @@ public sealed class AppController
 
         // Read-only targets are fine here: whether that matters is decided once a prompt is chosen (overlay output works, replace does not).
         var target = _desktop.CaptureTarget();
-        var anchor = MakeAnchor(target);
+        var anchor = _anchors.ForTarget(target);
         if (Reject(_text.PreCheck(target, null, CaptureMode.Display), target, anchor)) return;
 
         Busy = true;
@@ -230,13 +250,13 @@ public sealed class AppController
         // Classic Win32 carets are known instantly. Otherwise UIA usually answers within a few milliseconds, which is
         // worth waiting for so the overlay appears at the text cursor instead of at the mouse; if it is slower, the
         // overlay does not wait any longer.
-        var anchorKind = Position != OverlayPosition.Caret ? Position.ToString().ToLowerInvariant()
+        var anchorKind = _anchors.Position != OverlayPosition.Caret ? _anchors.Position.ToString().ToLowerInvariant()
             : session.Target?.CaretScreenPos is not null ? "win32 caret" : "mouse";
-        if (Position == OverlayPosition.Caret && session.Target?.CaretScreenPos is null)
+        if (_anchors.Position == OverlayPosition.Caret && session.Target?.CaretScreenPos is null)
         {
             if (await Task.WhenAny(session.Probe, Task.Delay(CaretWaitBudget)) == session.Probe)
             {
-                var refined = Refine(session.Anchor, session.Target, await session.Probe);
+                var refined = _anchors.Refine(session.Anchor, session.Target, await session.Probe);
                 if (!refined.Equals(session.Anchor)) anchorKind = "uia caret";
                 session = session with { Anchor = refined };
             }
@@ -253,12 +273,6 @@ public sealed class AppController
         _ = ActivateAfterProbeAsync(session);
     }
 
-    /// <summary>Moves a mouse-based anchor to the text cursor if UI Automation found it.</summary>
-    private Anchor Refine(Anchor anchor, TargetInfo? target, FocusProbe probe, OverlayPosition? position = null)
-        => (position ?? Position) == OverlayPosition.Caret && target?.CaretScreenPos is null && probe.Info?.CaretPoint is { } caret
-            ? Anchor.AtCaret(caret)
-            : anchor;
-
     /// <summary>Per-prompt hotkey: runs the prompt directly, without the overlay.</summary>
     public void OnPromptHotkey(long hotkeyTimestamp, PromptDefinition prompt)
     {
@@ -272,7 +286,7 @@ public sealed class AppController
         }
 
         var target = _desktop.CaptureTarget();
-        var anchor = MakeAnchor(target);
+        var anchor = _anchors.ForTarget(target);
         if (Reject(_text.PreCheck(target, null, ModeOf(prompt)), target, anchor)) return;
 
         Busy = true;
@@ -363,7 +377,7 @@ public sealed class AppController
 
             // The probe is normally long finished; waiting for it first lets the progress pill sit at the text cursor.
             var probe = await session.Probe;
-            session = session with { Anchor = Refine(session.Anchor, target, probe) };
+            session = session with { Anchor = _anchors.Refine(session.Anchor, target, probe) };
             _status.ShowProgress(Loc.Get("working", prompt.Name), session.Anchor);
 
             var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, ct: cts.Token));
@@ -525,15 +539,6 @@ public sealed class AppController
     /// A run whose result is shown in the card instead of replacing the text. Nothing in the target is changed: no
     /// paste, no history for undo, no "target changed" check. The text is read without ever selecting anything (no Ctrl+A).
     /// </summary>
-    /// <summary>Where the card opens: a fixed place, like the picker (follow), at the text cursor, or at the mouse.</summary>
-    private Anchor ResultAnchor(TargetInfo target, FocusProbe probe, Anchor pickerAnchor) => ResultPlacement switch
-    {
-        ResultPlacement.Fixed => Anchor.ResolveSpot(target, ResultSpot, ResultScreenMargin),
-        ResultPlacement.Caret => Refine(Anchor.Resolve(target, OverlayPosition.Caret), target, probe, OverlayPosition.Caret) with { MarginDip = ResultScreenMargin },
-        ResultPlacement.Mouse => Anchor.Resolve(target, OverlayPosition.Mouse) with { MarginDip = ResultScreenMargin },
-        _ => Refine(pickerAnchor, target, probe) with { MarginDip = ResultScreenMargin },
-    };
-
     private async Task ExecuteOverlayAsync(Session session, PromptDefinition prompt, bool restoreFocus, long? hotkeyTimestamp)
     {
         var target = session.Target!;
@@ -556,7 +561,7 @@ public sealed class AppController
             // the screen edge (the selection can reach beyond the visible page) and cover what is being read.
             session = session with
             {
-                Anchor = ResultAnchor(target, probe, session.Anchor),
+                Anchor = _anchors.ForResult(target, probe, session.Anchor),
             };
             _status.BeginResult(Loc.Get("working", prompt.Name), session.Anchor);
 
@@ -813,7 +818,7 @@ public sealed class AppController
         }
 
         var target = _desktop.CaptureTarget();
-        var anchor = MakeAnchor(target);
+        var anchor = _anchors.ForTarget(target);
         if (Reject(_text.PreCheck(target, null), target, anchor)) return;
         if (History.Count == 0)
         {
@@ -833,7 +838,7 @@ public sealed class AppController
         try
         {
             var probe = await session.Probe;
-            session = session with { Anchor = Refine(session.Anchor, target, probe) };
+            session = session with { Anchor = _anchors.Refine(session.Anchor, target, probe) };
 
             // Read what is in the field right now (selection, otherwise the whole field), exactly as for a normal run.
             var captured = await Task.Run(() => _text.CaptureAsync(target, ReadStrategy.Auto, probe, ct: cts.Token));
